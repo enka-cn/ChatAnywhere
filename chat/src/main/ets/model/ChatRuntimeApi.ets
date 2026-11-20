@@ -86,6 +86,16 @@ export interface RuntimeSnapshot {
   nodeCount: number;
   /** 是否有可用 Key（未配置时输入栏提示去设置）。 */
   hasApiKey: boolean;
+  /** 是否已拉取到可用模型（false 时顶栏/输入栏引导去设置）。 */
+  hasModel: boolean;
+  /** 最近一次记忆整理时间（0 表示从未整理）。 */
+  lastCompactionAt: number;
+  /** 最近一次整理前估算 token。 */
+  lastCompactionBeforeTokens: number;
+  /** 最近一次整理后估算 token。 */
+  lastCompactionAfterTokens: number;
+  /** 最近一次整理摘要全文（空串表示没有）。 */
+  lastCompactionSummary: string;
 }
 
 /** 运行时接口。 */

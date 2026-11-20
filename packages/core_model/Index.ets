@@ -16,6 +16,7 @@ export {
 } from './src/main/ets/interfaces/RepositoryApi';
 
 export { SecretApi } from './src/main/ets/interfaces/SecretApi';
+export { ProviderModelRecord, ModelRegistryApi } from './src/main/ets/interfaces/ModelRegistryApi';
 export { ExportResult, ImportResult, SessionExporterApi } from './src/main/ets/interfaces/ExportApi';
 export { TrajectoryApi } from './src/main/ets/interfaces/TrajectoryApi';
 export { ModelLayer, ModelLayerOptions, CreateModelLayer } from './src/main/ets/interfaces/ModelLayer';

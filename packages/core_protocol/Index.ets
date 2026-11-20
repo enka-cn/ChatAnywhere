@@ -2,17 +2,19 @@
  * core_protocol 公开 API（冻结契约）。
  *
  * 前半部分是跨模块共享的契约（类型/接口/工厂），后半部分是本模块实现类与纯函数，
- * 供 UI/QA 直接复用（例如 QA 会用 Node 跑 SseParser 与各 Adapter 的事件解析）。
+ * 供 UI/QA 直接复用（例如 QA 会用 Node 跑 SseParser、各 Adapter 的事件解析与 /models 解析）。
  */
 export {
   ProtocolKind, ThinkingLevel, WebMode, ModelProfile, ToolSpec, WebToolOption, RequestOptions, UsageInfo,
-  StreamEventType, ToolCallPhase, StreamPayload, StreamEvent, HttpRequestSpec, ConnectionTestResult
+  StreamEventType, ToolCallPhase, StreamPayload, StreamEvent, HttpRequestSpec, ConnectionTestResult,
+  RemoteModelInfo
 } from './src/main/ets/interfaces/ProtocolTypes';
 
 export { SseFrame, SseParserApi, ProviderAdapter } from './src/main/ets/interfaces/ProviderAdapter';
 
 export {
-  StreamCallbacks, StreamHandle, ModelCatalogApi, ProtocolDeps, ProtocolLayer, CreateProtocolLayer
+  StreamCallbacks, StreamHandle, ModelCatalogApi, ProviderPreset, ProtocolDeps, ProtocolLayer,
+  CreateProtocolLayer
 } from './src/main/ets/interfaces/ProtocolLayer';
 
 export { createProtocolLayer, ProtocolLayerImpl, ProtocolStreamRun } from './src/main/ets/ProtocolLayerFactory';
@@ -34,6 +36,9 @@ export { parseOpenAiSse, OpenAiSseState } from './src/main/ets/adapters/OpenAiSs
 export { NetErrorInfo, mapRcpError, mapHttpStatus, mapThrownError } from './src/main/ets/util/ErrorText';
 export { buildLocalTitle, sanitizeTitleText, truncateTitle } from './src/main/ets/util/TitleUtil';
 export { joinUrl, isHttpsUrl, bodySnippet } from './src/main/ets/util/UrlUtil';
+export {
+  parseModelsResponse, modelsUrl, openAiCompatModelsUrl, modelIdsOf
+} from './src/main/ets/util/RemoteModels';
 export {
   newObjectRecord, asRecord, getStr, getNum, getBool, getObj, getObjList, getStrList, hasField, parseRecord,
   stringifyRecord

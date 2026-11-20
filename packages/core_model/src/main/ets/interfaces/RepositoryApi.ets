@@ -5,6 +5,7 @@
  * 实现方：core_model/RdbRepository.ets（SQLite + FTS5）。
  */
 import { ConversationNode, NodeBrief, SessionMeta } from './ModelTypes';
+import { ModelRegistryApi } from './ModelRegistryApi';
 
 /** 会话级操作。 */
 export interface SessionRepositoryApi {
@@ -110,7 +111,7 @@ export interface SettingsApi {
 
 /** RDB 汇总能力（实现类同时具备上述接口）。 */
 export interface RdbRepositoryApi extends SessionRepositoryApi, NodeRepositoryApi, SearchApi,
-  SkillRepositoryApi, SettingsApi {
+  SkillRepositoryApi, SettingsApi, ModelRegistryApi {
   /** 最近一次打开数据库失败的原因（用于设置页诊断，空串表示正常）。 */
   readonly lastError: string;
   /** 关闭数据库（页面退出/测试用）。 */

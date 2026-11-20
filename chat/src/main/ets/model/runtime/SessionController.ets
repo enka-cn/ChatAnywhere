@@ -58,7 +58,7 @@ export class SessionController {
     return this.host.appServices().requireModel().repo.listSessions(50);
   }
 
-  /** 恢复上次会话；没有就新建（无可用模型时抛中文错误）。 */
+  /** 恢复上次会话；没有就新建（v3.2 无可用模型时也建空会话，不阻断 init）。 */
   async openLastOrNewSession(): Promise<void> {
     const repo = this.host.appServices().requireModel().repo;
     const lastId: string = await repo.getString(SettingsKeys.LAST_SESSION_ID, '');
@@ -69,19 +69,14 @@ export class SessionController {
         return;
       }
     }
+    // 无模型时 ensureProfile 会写中文引导并返回 null；这里仍建一个空会话保证界面可用。
     const profile: ModelProfile | null = await this.host.ensureProfile();
-    if (profile === null) {
-      throw new Error('还没有可用的模型配置');
-    }
     await this.createNewSessionInternal(profile);
   }
 
-  /** 新建会话（门面已确保运行时就绪）。 */
+  /** 新建会话（门面已确保运行时就绪；无模型时建空会话，由快照 hasModel 引导去设置）。 */
   async newSession(): Promise<string> {
     const profile: ModelProfile | null = await this.host.ensureProfile();
-    if (profile === null) {
-      return '';
-    }
     const id: string = await this.createNewSessionInternal(profile);
     this.host.notifyNow();
     return id;
@@ -123,9 +118,7 @@ export class SessionController {
     await repo.deleteSession(sessionId);
     if (sessionId === this.sessionIdValue) {
       const profile: ModelProfile | null = await this.host.ensureProfile();
-      if (profile !== null) {
-        await this.createNewSessionInternal(profile);
-      }
+      await this.createNewSessionInternal(profile);
     }
     await this.refreshNodes(true);
   }
@@ -184,9 +177,12 @@ export class SessionController {
     }
   }
 
-  private async createNewSessionInternal(profile: ModelProfile): Promise<string> {
+  /** 建会话（profile 为 null 表示 v3.2「暂无真实模型」：仍落盘空会话，模型字段留空）。 */
+  private async createNewSessionInternal(profile: ModelProfile | null): Promise<string> {
     const repo = this.host.appServices().requireModel().repo;
-    const meta: SessionMeta = await repo.createSession(DEFAULT_TITLE, profile.modelId, profile.providerId);
+    const modelId: string = profile === null ? '' : profile.modelId;
+    const providerId: string = profile === null ? '' : profile.providerId;
+    const meta: SessionMeta = await repo.createSession(DEFAULT_TITLE, modelId, providerId);
     this.sessionIdValue = meta.sessionId;
     const snapshot = this.host.snapshot();
     snapshot.sessionId = meta.sessionId;

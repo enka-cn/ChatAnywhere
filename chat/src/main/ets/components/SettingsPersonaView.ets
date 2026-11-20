@@ -1,31 +1,36 @@
 /**
- * 设置 · 角色与提示词（Cherry Studio 级配置）。
+ * 设置 · 角色与提示词（v3.2 二级菜单 + 头像）。
  *
- * 角色 CRUD + 设默认 + 系统提示词变量插入 + 采样参数（模型/6 档思考/Temperature/Top-P/轮数）
- * + 默认绑定技能。全部落盘到 PersonaStore，保存后刷新运行时设置。
+ * 一级：搜索 + 新建 + 角色行（40×40 圆形头像 / 名称 / 默认标识 / 绑定模型摘要）。
+ * 二级：头像选择（10 图标 + 8 配色）、名称与默认、系统提示词与变量、
+ *      模型/6 档思考/Temperature/Top-P/轮数、默认绑定技能、复制/删除/保存。
  */
 import { SkillSummary } from '@app/core_plugin';
 import { ModelProfile } from '@app/core_protocol';
 import { AppServices } from '../app/AppServices';
 import { EffortLevels, EffortOption } from '../app/EffortLevels';
 import { PersonaProfile } from '../app/PersonaStore';
+import { PersonaAvatars } from '../app/PersonaAvatars';
 import { Icons, Layout, Theme } from '../app/Theme';
 import { getChatRuntimeConcrete } from '../model/RuntimeHolder';
+import { PersonaAvatarPicker } from './PersonaAvatarPicker';
 
 const TIER_L3: string = 'L3_QUICKJS_SANDBOX';
+const FOLLOW_MODEL: string = '跟随当前模型';
 
 @Component
 export struct SettingsPersonaView {
   @State private loading: boolean = true;
   @State private personas: PersonaProfile[] = [];
-  @State private editingId: string = '';
   @State private defaultId: string = '';
   @State private profiles: ModelProfile[] = [];
   @State private skills: SkillSummary[] = [];
+  @State private searchText: string = '';
+  @State private selectedId: string = '';
   @State private statusText: string = '';
   @State private busy: boolean = false;
+  @State private pickerOpen: boolean = false;
 
-  // 当前草稿（拆成基础字段，避免深层对象改动不触发刷新）
   @State private draftName: string = '';
   @State private draftPrompt: string = '';
   @State private draftModelId: string = '';
@@ -35,6 +40,8 @@ export struct SettingsPersonaView {
   @State private draftTopP: number = 0.95;
   @State private draftMaxTurns: number = 20;
   @State private draftSkills: string[] = [];
+  @State private draftIcon: string = PersonaAvatars.DEFAULT_ICON;
+  @State private draftTone: string = PersonaAvatars.DEFAULT_TONE;
 
   aboutToAppear(): void {
     this.load();
@@ -48,8 +55,6 @@ export struct SettingsPersonaView {
       this.defaultId = store.defaultId();
       this.profiles = services.requireProtocol().catalog.listProfiles();
       this.skills = this.loadSkills();
-      const first: string = this.personas.length > 0 ? this.personas[0].id : '';
-      this.selectPersona(first);
     } catch (e) {
       this.statusText = `${(e as Error).message}`;
     }
@@ -85,13 +90,46 @@ export struct SettingsPersonaView {
     return null;
   }
 
-  private selectPersona(id: string): void {
+  private filteredPersonas(): PersonaProfile[] {
+    const key: string = this.searchText.trim().toLowerCase();
+    if (key.length === 0) {
+      return this.personas;
+    }
+    const out: PersonaProfile[] = [];
+    for (const one of this.personas) {
+      const nameHit: boolean = one.name.toLowerCase().indexOf(key) >= 0;
+      const promptHit: boolean = one.prompt.toLowerCase().indexOf(key) >= 0;
+      if (nameHit || promptHit) {
+        out.push(one);
+      }
+    }
+    return out;
+  }
+
+  private modelSummary(persona: PersonaProfile): string {
+    if (persona.modelId.length === 0) {
+      return FOLLOW_MODEL;
+    }
+    for (const one of this.profiles) {
+      if (one.modelId === persona.modelId) {
+        return one.label;
+      }
+    }
+    return persona.modelId;
+  }
+
+  // ---------------------------------------------------------------------------
+  // 选择 / 前进后退
+  // ---------------------------------------------------------------------------
+
+  private openDetail(id: string): void {
     const persona: PersonaProfile | null = this.findPersona(id);
     if (persona === null) {
-      this.editingId = '';
       return;
     }
-    this.editingId = persona.id;
+    this.selectedId = persona.id;
+    this.pickerOpen = false;
+    this.statusText = '';
     this.draftName = persona.name;
     this.draftPrompt = persona.prompt;
     this.draftProviderId = persona.providerId;
@@ -100,17 +138,25 @@ export struct SettingsPersonaView {
     this.draftTemperature = persona.temperature;
     this.draftTopP = persona.topP;
     this.draftMaxTurns = persona.maxTurns;
-    this.draftSkills = [];
+    this.draftIcon = persona.avatarIcon !== undefined ? persona.avatarIcon : PersonaAvatars.DEFAULT_ICON;
+    this.draftTone = persona.avatarTone !== undefined ? persona.avatarTone : PersonaAvatars.DEFAULT_TONE;
+    const next: string[] = [];
     for (const sid of persona.defaultSkills) {
-      this.draftSkills.push(sid);
+      next.push(sid);
     }
+    this.draftSkills = next;
+  }
+
+  private backToList(): void {
+    this.selectedId = '';
+    this.pickerOpen = false;
     this.statusText = '';
   }
 
   private buildDraft(): PersonaProfile {
-    const base: PersonaProfile | null = this.findPersona(this.editingId);
+    const base: PersonaProfile | null = this.findPersona(this.selectedId);
     const profile: PersonaProfile = {
-      id: this.editingId.length > 0 ? this.editingId : `p_${Date.now().toString(36)}`,
+      id: this.selectedId.length > 0 ? this.selectedId : `p_${Date.now().toString(36)}`,
       name: this.draftName.trim().length > 0 ? this.draftName.trim() : '未命名角色',
       prompt: this.draftPrompt,
       providerId: this.draftProviderId,
@@ -120,6 +166,8 @@ export struct SettingsPersonaView {
       topP: this.draftTopP,
       maxTurns: Math.round(this.draftMaxTurns),
       defaultSkills: this.draftSkills,
+      avatarIcon: this.draftIcon.length > 0 ? this.draftIcon : PersonaAvatars.DEFAULT_ICON,
+      avatarTone: this.draftTone.length > 0 ? this.draftTone : PersonaAvatars.DEFAULT_TONE,
       builtin: base !== null ? base.builtin : false,
       updatedAt: Date.now()
     };
@@ -130,7 +178,7 @@ export struct SettingsPersonaView {
     try {
       await getChatRuntimeConcrete().refreshSettings();
     } catch (e) {
-      // 运行时未初始化时忽略，下一次进入对话会重新读取
+      // 运行时未初始化时忽略；下次进入对话会重新读取
     }
   }
 
@@ -142,8 +190,8 @@ export struct SettingsPersonaView {
     try {
       const draft: PersonaProfile = AppServices.get().requirePersonas().newDraft();
       this.personas = this.personas.concat([draft]);
-      this.selectPersona(draft.id);
-      this.statusText = '新角色未保存';
+      this.openDetail(draft.id);
+      this.statusText = '未保存';
     } catch (e) {
       this.statusText = `${(e as Error).message}`;
     }
@@ -163,7 +211,6 @@ export struct SettingsPersonaView {
       await store.save(this.buildDraft());
       this.personas = store.list();
       this.defaultId = store.defaultId();
-      this.selectPersona(this.editingId);
       this.statusText = '已保存';
       await this.refreshRuntime();
     } catch (e) {
@@ -175,7 +222,7 @@ export struct SettingsPersonaView {
   private async setDefaultPersona(): Promise<void> {
     try {
       const store = AppServices.get().requirePersonas();
-      await store.setDefault(this.editingId);
+      await store.setDefault(this.selectedId);
       this.defaultId = store.defaultId();
       this.statusText = '已设为默认角色';
       await this.refreshRuntime();
@@ -187,13 +234,13 @@ export struct SettingsPersonaView {
   private async duplicatePersona(): Promise<void> {
     try {
       const store = AppServices.get().requirePersonas();
-      const copy: PersonaProfile | null = await store.duplicate(this.editingId);
+      const copy: PersonaProfile | null = await store.duplicate(this.selectedId);
       if (copy === null) {
         this.statusText = '复制失败';
         return;
       }
       this.personas = store.list();
-      this.selectPersona(copy.id);
+      this.openDetail(copy.id);
       this.statusText = '已复制角色';
     } catch (e) {
       this.statusText = `复制失败：${(e as Error).message}`;
@@ -206,29 +253,27 @@ export struct SettingsPersonaView {
     }
     try {
       const store = AppServices.get().requirePersonas();
-      const persisted: PersonaProfile | null = store.get(this.editingId);
+      const persisted: PersonaProfile | null = store.get(this.selectedId);
       if (persisted === null) {
-        // 尚未保存的新角色：直接从本地列表放弃
         const next: PersonaProfile[] = [];
         for (const one of this.personas) {
-          if (one.id !== this.editingId) {
+          if (one.id !== this.selectedId) {
             next.push(one);
           }
         }
         this.personas = next;
-        this.selectPersona(next.length > 0 ? next[0].id : '');
+        this.backToList();
         this.statusText = '已放弃草稿';
         return;
       }
-      const ok: boolean = await store.remove(this.editingId);
+      const ok: boolean = await store.remove(this.selectedId);
       if (!ok) {
         this.statusText = '删除失败';
         return;
       }
       this.personas = store.list();
       this.defaultId = store.defaultId();
-      this.selectPersona(this.personas.length > 0 ? this.personas[0].id : '');
-      this.statusText = '已删除角色';
+      this.backToList();
       await this.refreshRuntime();
     } catch (e) {
       this.statusText = `删除失败：${(e as Error).message}`;
@@ -269,8 +314,10 @@ export struct SettingsPersonaView {
     return this.draftSkills.indexOf(skillId) >= 0;
   }
 
-  private selectOptions(): SelectOption[] {
+  private modelOptions(): SelectOption[] {
     const out: SelectOption[] = [];
+    const follow: SelectOption = { value: FOLLOW_MODEL };
+    out.push(follow);
     for (const one of this.profiles) {
       const option: SelectOption = { value: one.label };
       out.push(option);
@@ -279,25 +326,36 @@ export struct SettingsPersonaView {
   }
 
   private modelIndex(): number {
+    if (this.draftModelId.length === 0) {
+      return 0;
+    }
     for (let i = 0; i < this.profiles.length; i++) {
       if (this.profiles[i].modelId === this.draftModelId) {
-        return i;
+        return i + 1;
       }
     }
     return 0;
   }
 
-  private modelLabel(): string {
-    const idx: number = this.modelIndex();
-    return this.profiles.length > idx ? this.profiles[idx].label : '';
+  private modelLabelText(): string {
+    const index: number = this.modelIndex();
+    if (index === 0) {
+      return FOLLOW_MODEL;
+    }
+    return this.profiles[index - 1].label;
   }
 
   private pickModel(index: number): void {
-    if (index < 0 || index >= this.profiles.length) {
+    if (index <= 0) {
+      this.draftModelId = '';
+      this.draftProviderId = '';
       return;
     }
-    this.draftModelId = this.profiles[index].modelId;
-    this.draftProviderId = this.profiles[index].providerId;
+    if (index > this.profiles.length) {
+      return;
+    }
+    this.draftModelId = this.profiles[index - 1].modelId;
+    this.draftProviderId = this.profiles[index - 1].providerId;
   }
 
   private effortShort(): string {
@@ -305,80 +363,191 @@ export struct SettingsPersonaView {
   }
 
   // ---------------------------------------------------------------------------
-  // UI
+  // 一级列表 UI
   // ---------------------------------------------------------------------------
 
   @Builder
-  personaChips() {
-    Scroll() {
-      Row({ space: Layout.s2 }) {
-        ForEach(this.personas, (one: PersonaProfile) => {
-          Row({ space: 6 }) {
-            Text(one.name)
-              .fontSize(Layout.fontUi)
-              .fontColor(this.editingId === one.id ? Theme.brand : Theme.textSecondary)
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-            if (this.defaultId === one.id) {
-              Circle({ width: 6, height: 6 }).fill(Theme.brand)
-            }
-          }
-          .padding({ left: Layout.s3, right: Layout.s3, top: 6, bottom: 6 })
-          .borderRadius(Layout.radiusPill)
-          .backgroundColor(this.editingId === one.id ? Theme.brandSubtle : Theme.bgSurface)
-          .onClick(() => {
-            this.selectPersona(one.id);
+  listHeader() {
+    Row({ space: Layout.s2 }) {
+      Row({ space: Layout.s1 }) {
+        SymbolGlyph(Icons.search)
+          .fontSize(Layout.iconS)
+          .fontColor([Theme.iconSecondary])
+        TextInput({ text: this.searchText, placeholder: '搜索角色' })
+          .fontSize(Layout.fontUi)
+          .height(34)
+          .layoutWeight(1)
+          .backgroundColor(Color.Transparent)
+          .padding({ left: 0, right: 0 })
+          .onChange((value: string) => {
+            this.searchText = value;
           })
-        }, (one: PersonaProfile) => one.id)
+      }
+      .layoutWeight(1)
+      .padding({ left: Layout.s3, right: Layout.s3 })
+      .borderRadius(Layout.radiusPill)
+      .backgroundColor(Theme.bgSurface)
 
-        Row({ space: 4 }) {
-          SymbolGlyph(Icons.plus)
-            .fontSize(Layout.iconS)
-            .fontColor([Theme.brand])
-          Text('新建角色')
-            .fontSize(Layout.fontUi)
-            .fontColor(Theme.brand)
-        }
-        .padding({ left: Layout.s3, right: Layout.s3, top: 6, bottom: 6 })
+      Text('新建')
+        .fontSize(Layout.fontUi)
+        .fontColor(Theme.textOnBrand)
+        .padding({ left: Layout.s3, right: Layout.s3, top: 7, bottom: 7 })
         .borderRadius(Layout.radiusPill)
-        .backgroundColor(Theme.bgSurface)
+        .backgroundColor(Theme.brand)
         .onClick(() => {
           this.newPersona();
         })
-      }
-      .padding({ right: Layout.s4 })
     }
-    .scrollable(ScrollDirection.Horizontal)
-    .scrollBar(BarState.Off)
     .width('100%')
+    .padding({ left: Layout.pagePadding, right: Layout.pagePadding, top: Layout.s3, bottom: Layout.s2 })
   }
 
   @Builder
-  baseCard() {
-    Column({ space: Layout.s3 }) {
-      Row({ space: Layout.s2 }) {
+  personaRow(persona: PersonaProfile) {
+    Row({ space: Layout.s3 }) {
+      Row() {
+        SymbolGlyph(PersonaAvatars.iconOf(persona.avatarIcon))
+          .fontSize(Layout.iconL)
+          .fontColor([PersonaAvatars.foreground()])
+      }
+      .width(40)
+      .height(40)
+      .borderRadius(20)
+      .justifyContent(FlexAlign.Center)
+      .backgroundColor(PersonaAvatars.toneOf(persona.avatarTone))
+
+      Column({ space: 2 }) {
+        Row({ space: Layout.s2 }) {
+          Text(persona.name)
+            .fontSize(Layout.fontUi)
+            .fontColor(Theme.textPrimary)
+            .fontWeight(FontWeight.Medium)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+          if (this.defaultId === persona.id) {
+            Text('默认')
+              .fontSize(Layout.fontCaption)
+              .fontColor(Theme.brand)
+              .padding({ left: 6, right: 6, top: 1, bottom: 1 })
+              .borderRadius(Layout.radiusS)
+              .backgroundColor(Theme.brandSubtle)
+          }
+        }
+        .width('100%')
+
+        Text(this.modelSummary(persona))
+          .fontSize(Layout.fontCaption)
+          .fontColor(Theme.textTertiary)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+
+      SymbolGlyph(Icons.chevronRight)
+        .fontSize(Layout.iconM)
+        .fontColor([Theme.iconSecondary])
+    }
+    .width('100%')
+    .padding({ left: Layout.pagePadding, right: Layout.pagePadding, top: Layout.s2, bottom: Layout.s2 })
+    .onClick(() => {
+      this.openDetail(persona.id);
+    })
+  }
+
+  @Builder
+  listView() {
+    Column() {
+      this.listHeader()
+      if (this.filteredPersonas().length === 0) {
+        Text('没有匹配的角色')
+          .fontSize(Layout.fontUi)
+          .fontColor(Theme.textTertiary)
+          .width('100%')
+          .padding(Layout.pagePadding)
+      } else {
+        Scroll() {
+          Column() {
+            ForEach(this.filteredPersonas(), (persona: PersonaProfile, index: number) => {
+              this.personaRow(persona)
+              if (index < this.filteredPersonas().length - 1) {
+                Divider().color(Theme.divider).margin({ left: Layout.pagePadding + 52 })
+              }
+            }, (persona: PersonaProfile) => persona.id)
+          }
+          .width('100%')
+        }
+        .layoutWeight(1)
+        .width('100%')
+        .align(Alignment.Top)
+        .scrollBar(BarState.Off)
+      }
+    }
+    .width('100%')
+    .height('100%')
+  }
+
+  // ---------------------------------------------------------------------------
+  // 二级详情 UI
+  // ---------------------------------------------------------------------------
+
+  @Builder
+  avatarRow() {
+    Row({ space: Layout.s3 }) {
+      Row() {
+        SymbolGlyph(PersonaAvatars.iconOf(this.draftIcon))
+          .fontSize(Layout.iconL)
+          .fontColor([PersonaAvatars.foreground()])
+      }
+      .width(56)
+      .height(56)
+      .borderRadius(28)
+      .justifyContent(FlexAlign.Center)
+      .backgroundColor(PersonaAvatars.toneOf(this.draftTone))
+      .border({ width: 1, color: Theme.border })
+      .onClick(() => {
+        this.pickerOpen = !this.pickerOpen;
+      })
+
+      Column({ space: Layout.s2 }) {
         TextInput({ text: this.draftName, placeholder: '角色名称' })
           .fontSize(Layout.fontUi)
-          .height(38)
-          .layoutWeight(1)
+          .height(36)
+          .width('100%')
           .backgroundColor(Theme.bgPage)
           .borderRadius(Layout.radiusM)
           .padding({ left: Layout.s3, right: Layout.s3 })
           .onChange((value: string) => {
             this.draftName = value;
           })
-        Text(this.defaultId === this.editingId ? '默认角色' : '设为默认')
-          .fontSize(Layout.fontUi)
-          .fontColor(this.defaultId === this.editingId ? Theme.textOnBrand : Theme.textSecondary)
-          .padding({ left: Layout.s3, right: Layout.s3, top: 7, bottom: 7 })
-          .borderRadius(Layout.radiusM)
-          .backgroundColor(this.defaultId === this.editingId ? Theme.brand : Theme.bgPage)
-          .onClick(() => {
-            this.setDefaultPersona();
-          })
+        Row({ space: Layout.s2 }) {
+          Text(this.defaultId === this.selectedId ? '默认角色' : '设为默认')
+            .fontSize(Layout.fontCaption)
+            .fontColor(this.defaultId === this.selectedId ? Theme.textOnBrand : Theme.brand)
+            .padding({ left: Layout.s3, right: Layout.s3, top: 5, bottom: 5 })
+            .borderRadius(Layout.radiusPill)
+            .backgroundColor(this.defaultId === this.selectedId ? Theme.brand : Theme.brandSubtle)
+            .onClick(() => {
+              this.setDefaultPersona();
+            })
+          Blank()
+        }
+        .width('100%')
       }
-      .width('100%')
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+    }
+    .width('100%')
+    .padding(Layout.s3)
+    .backgroundColor(Theme.bgSurface)
+    .borderRadius(Layout.radiusL)
+    .border({ width: 1, color: Theme.border })
+  }
 
+  @Builder
+  promptCard() {
+    Column({ space: Layout.s2 }) {
       Row({ space: Layout.s1 }) {
         Text('系统提示词')
           .fontSize(Layout.fontSmall)
@@ -407,7 +576,7 @@ export struct SettingsPersonaView {
 
       TextArea({ text: this.draftPrompt, placeholder: '角色设定与回答要求' })
         .fontSize(Layout.fontSmall)
-        .height(130)
+        .height(120)
         .width('100%')
         .backgroundColor(Theme.bgPage)
         .borderRadius(Layout.radiusM)
@@ -421,67 +590,64 @@ export struct SettingsPersonaView {
     .backgroundColor(Theme.bgSurface)
     .borderRadius(Layout.radiusL)
     .border({ width: 1, color: Theme.border })
+    .alignItems(HorizontalAlign.Start)
   }
 
   @Builder
   samplingCard() {
-    Column({ space: Layout.s4 }) {
-      Row({ space: Layout.s3 }) {
-        Column({ space: Layout.s1 }) {
-          Text('默认模型')
+    Column({ space: Layout.s3 }) {
+      Column({ space: Layout.s1 }) {
+        Text('默认模型')
+          .fontSize(Layout.fontSmall)
+          .fontColor(Theme.textSecondary)
+          .width('100%')
+        Select(this.modelOptions())
+          .selected(this.modelIndex())
+          .value(this.modelLabelText())
+          .font({ size: Layout.fontUi })
+          .fontColor(Theme.textPrimary)
+          .selectedOptionBgColor(Theme.brandSubtle)
+          .selectedOptionFontColor(Theme.brand)
+          .onSelect((index: number) => {
+            this.pickModel(index);
+          })
+          .width('100%')
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+
+      Column({ space: Layout.s1 }) {
+        Row() {
+          Text('默认思考')
             .fontSize(Layout.fontSmall)
             .fontColor(Theme.textSecondary)
-            .width('100%')
-          Select(this.selectOptions())
-            .selected(this.modelIndex())
-            .value(this.modelLabel())
-            .font({ size: Layout.fontUi })
-            .fontColor(Theme.textPrimary)
-            .selectedOptionBgColor(Theme.brandSubtle)
-            .selectedOptionFontColor(Theme.brand)
-            .onSelect((index: number) => {
-              this.pickModel(index);
-            })
-            .width('100%')
+            .layoutWeight(1)
+          Text(this.effortShort())
+            .fontSize(Layout.fontSmall)
+            .fontColor(Theme.brand)
         }
-        .layoutWeight(1)
-        .alignItems(HorizontalAlign.Start)
-
-        Column({ space: Layout.s1 }) {
-          Row() {
-            Text('默认思考')
-              .fontSize(Layout.fontSmall)
-              .fontColor(Theme.textSecondary)
+        .width('100%')
+        Slider({ value: this.draftEffortIndex, min: 0, max: 5, step: 1 })
+          .selectedColor(Theme.brand)
+          .trackColor(Theme.bgSurface3)
+          .blockColor(Theme.bgSurface)
+          .width('100%')
+          .onChange((value: number) => {
+            this.draftEffortIndex = Math.round(value);
+          })
+        Row() {
+          ForEach(EffortLevels.ALL, (one: EffortOption, index: number) => {
+            Text(one.short)
+              .fontSize(Layout.fontCaption)
+              .fontColor(this.draftEffortIndex === index ? Theme.brand : Theme.textTertiary)
               .layoutWeight(1)
-            Text(this.effortShort())
-              .fontSize(Layout.fontSmall)
-              .fontColor(Theme.brand)
-          }
-          .width('100%')
-          Slider({ value: this.draftEffortIndex, min: 0, max: 5, step: 1 })
-            .selectedColor(Theme.brand)
-            .trackColor(Theme.bgSurface3)
-            .blockColor(Theme.bgSurface)
-            .width('100%')
-            .onChange((value: number) => {
-              this.draftEffortIndex = Math.round(value);
-            })
-          Row() {
-            ForEach(EffortLevels.ALL, (one: EffortOption, index: number) => {
-              Text(one.short)
-                .fontSize(Layout.fontCaption)
-                .fontColor(this.draftEffortIndex === index ? Theme.brand : Theme.textTertiary)
-                .layoutWeight(1)
-                .textAlign(TextAlign.Center)
-                .onClick(() => {
-                  this.draftEffortIndex = index;
-                })
-            }, (one: EffortOption) => one.level)
-          }
-          .width('100%')
+              .textAlign(TextAlign.Center)
+              .onClick(() => {
+                this.draftEffortIndex = index;
+              })
+          }, (one: EffortOption) => one.level)
         }
-        .layoutWeight(1)
-        .alignItems(HorizontalAlign.Start)
+        .width('100%')
       }
       .width('100%')
 
@@ -601,6 +767,7 @@ export struct SettingsPersonaView {
     .backgroundColor(Theme.bgSurface)
     .borderRadius(Layout.radiusL)
     .border({ width: 1, color: Theme.border })
+    .alignItems(HorizontalAlign.Start)
   }
 
   @Builder
@@ -610,11 +777,11 @@ export struct SettingsPersonaView {
         SymbolGlyph(Icons.copy)
           .fontSize(Layout.iconS)
           .fontColor([Theme.textSecondary])
-        Text('复制角色')
+        Text('复制')
           .fontSize(Layout.fontUi)
           .fontColor(Theme.textSecondary)
       }
-      .padding({ left: Layout.s2, right: Layout.s2, top: 7, bottom: 7 })
+      .padding({ left: Layout.s2, right: Layout.s2, top: 6, bottom: 6 })
       .onClick(() => {
         this.duplicatePersona();
       })
@@ -624,11 +791,11 @@ export struct SettingsPersonaView {
           SymbolGlyph(Icons.trash)
             .fontSize(Layout.iconS)
             .fontColor([Theme.danger])
-          Text('删除角色')
+          Text('删除')
             .fontSize(Layout.fontUi)
             .fontColor(Theme.danger)
         }
-        .padding({ left: Layout.s2, right: Layout.s2, top: 7, bottom: 7 })
+        .padding({ left: Layout.s2, right: Layout.s2, top: 6, bottom: 6 })
         .onClick(() => {
           this.removePersona();
         })
@@ -648,19 +815,46 @@ export struct SettingsPersonaView {
     .width('100%')
   }
 
-  build() {
-    if (this.loading) {
-      Column() {
-        LoadingProgress().width(Layout.s6).height(Layout.s6).color(Theme.brand)
+  @Builder
+  detailView() {
+    Column() {
+      Row({ space: Layout.s2 }) {
+        SymbolGlyph(Icons.backArrow)
+          .fontSize(Layout.iconM)
+          .fontColor([Theme.iconSecondary])
+          .padding(Layout.s1)
+          .borderRadius(Layout.radiusS)
+          .backgroundColor(Theme.bgSurface)
+          .onClick(() => {
+            this.backToList();
+          })
+        Text('角色详情')
+          .fontSize(Layout.fontSmall)
+          .fontColor(Theme.textSecondary)
+          .layoutWeight(1)
       }
       .width('100%')
-      .height('100%')
-      .justifyContent(FlexAlign.Center)
-    } else {
+      .padding({ left: Layout.pagePadding, right: Layout.pagePadding, top: Layout.s2, bottom: Layout.s2 })
+
       Scroll() {
-        Column({ space: Layout.s4 }) {
-          this.personaChips()
-          this.baseCard()
+        Column({ space: Layout.s3 }) {
+          this.avatarRow()
+          if (this.pickerOpen) {
+            PersonaAvatarPicker({
+              currentIcon: this.draftIcon,
+              currentTone: this.draftTone,
+              onPickIcon: (key: string) => {
+                this.draftIcon = key;
+              },
+              onPickTone: (key: string) => {
+                this.draftTone = key;
+              },
+              onClose: () => {
+                this.pickerOpen = false;
+              }
+            })
+          }
+          this.promptCard()
           this.samplingCard()
           this.skillsCard()
           this.actionsRow()
@@ -672,13 +866,30 @@ export struct SettingsPersonaView {
           }
         }
         .width('100%')
-        .padding({ left: Layout.pagePadding, right: Layout.pagePadding, top: Layout.s3, bottom: Layout.s8 })
+        .padding({ left: Layout.pagePadding, right: Layout.pagePadding, top: Layout.s2, bottom: Layout.s8 })
         .alignItems(HorizontalAlign.Start)
+      }
+      .layoutWeight(1)
+      .width('100%')
+      .align(Alignment.Top)
+      .scrollBar(BarState.Off)
+    }
+    .width('100%')
+    .height('100%')
+  }
+
+  build() {
+    if (this.loading) {
+      Column() {
+        LoadingProgress().width(Layout.s6).height(Layout.s6).color(Theme.brand)
       }
       .width('100%')
       .height('100%')
-      .align(Alignment.Top)
-      .scrollBar(BarState.Off)
+      .justifyContent(FlexAlign.Center)
+    } else if (this.selectedId.length === 0) {
+      this.listView()
+    } else {
+      this.detailView()
     }
   }
 }

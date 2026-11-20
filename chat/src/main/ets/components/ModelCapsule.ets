@@ -1,10 +1,14 @@
 /**
- * 顶栏模型胶囊（v3.1：34vp 舒适触控胶囊 + 精致按压态 + Codex 6 档滑条）。
+ * 顶栏模型胶囊（v3.2：只展示真实启用模型；无模型时引导去设置拉取）。
+ *
+ * 有模型：模型名 · 6 档思考短标签 · chevron，半模态 = 模型列表 + 思考强度滑条。
+ * 无模型：胶囊显示「未选择模型」，半模态只保留一行「去设置拉取模型」。
  */
 import { ModelProfile, ThinkingLevel } from '@app/core_protocol';
 import { EffortLevels, EffortOption } from '../app/EffortLevels';
 import { Icons, Layout, Theme } from '../app/Theme';
 
+/** 厂商短名（半模态列表右侧的灰色说明）。 */
 function vendorLabel(providerId: string): string {
   if (providerId === 'deepseek') {
     return 'DeepSeek';
@@ -24,10 +28,14 @@ export struct ModelCapsule {
   @Prop modelId: string = '';
   @Prop providerId: string = '';
   @Prop thinkingLevel: ThinkingLevel = 'med';
+  /** 真实启用模型（空 = 还没从设置里拉取过）。 */
   @Prop profiles: ModelProfile[] = [];
   onSelectModel: (providerId: string, modelId: string) => void = (providerId: string, modelId: string) => {
   };
   onSelectThinking: (level: ThinkingLevel) => void = (level: ThinkingLevel) => {
+  };
+  /** 无模型时：关闭半模态并跳转设置「模型与密钥」。 */
+  onGoSettings: () => void = () => {
   };
 
   @State private showSheet: boolean = false;
@@ -49,6 +57,34 @@ export struct ModelCapsule {
   }
 
   @Builder
+  goSettingsRow() {
+    Row({ space: Layout.s2 }) {
+      Stack({ alignContent: Alignment.Center }) {
+        SymbolGlyph(Icons.settings).fontSize(Layout.iconM).fontColor([Theme.brand])
+      }
+      .width(34)
+      .height(34)
+      .borderRadius(Layout.radiusM)
+      .backgroundColor(Theme.brandSubtle)
+      Text('去设置拉取模型')
+        .fontSize(Layout.fontBody)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(Theme.brand)
+        .layoutWeight(1)
+      SymbolGlyph(Icons.chevronRight).fontSize(Layout.iconS).fontColor([Theme.textTertiary])
+    }
+    .width('100%')
+    .padding({ left: Layout.s2, right: Layout.s3, top: Layout.s2, bottom: Layout.s2 })
+    .borderRadius(Layout.radiusL)
+    .backgroundColor(Theme.bgSurface)
+    .border({ width: 1, color: Theme.border })
+    .onClick(() => {
+      this.showSheet = false;
+      this.onGoSettings();
+    })
+  }
+
+  @Builder
   sheetContent() {
     Column({ space: Layout.s4 }) {
       Text('模型与思考')
@@ -57,99 +93,96 @@ export struct ModelCapsule {
         .fontColor(Theme.textPrimary)
         .width('100%')
 
-      Column({ space: 8 }) {
-        if (this.profiles.length === 0) {
-          Text('暂无可用模型')
-            .fontSize(Layout.fontSmall)
-            .fontColor(Theme.textTertiary)
+      if (this.profiles.length === 0) {
+        this.goSettingsRow()
+      } else {
+        Column({ space: 8 }) {
+          ForEach(this.profiles, (profile: ModelProfile) => {
+            Row({ space: Layout.s2 }) {
+              Text(profile.label)
+                .fontSize(Layout.fontBody)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(profile.modelId === this.modelId && profile.providerId === this.providerId
+                  ? Theme.brand : Theme.textPrimary)
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .layoutWeight(1)
+              Text(vendorLabel(profile.providerId))
+                .fontSize(Layout.fontSmall)
+                .fontColor(Theme.textTertiary)
+                .fontFamily('monospace')
+              if (profile.modelId === this.modelId && profile.providerId === this.providerId) {
+                SymbolGlyph(Icons.check).fontSize(Layout.iconM).fontColor([Theme.brand])
+              }
+            }
             .width('100%')
-            .padding({ top: Layout.s2, bottom: Layout.s2 })
+            .padding({ left: Layout.s4, right: Layout.s4, top: 12, bottom: 12 })
+            .borderRadius(Layout.radiusL)
+            .backgroundColor(profile.modelId === this.modelId && profile.providerId === this.providerId
+              ? Theme.brandSubtle : Theme.bgSurface)
+            .border({
+              width: 1,
+              color: profile.modelId === this.modelId && profile.providerId === this.providerId
+                ? Color.Transparent : Theme.border
+            })
+            .stateStyles({ pressed: this.pillPressed, normal: this.pillNormal })
+            .onClick(() => {
+              this.onSelectModel(profile.providerId, profile.modelId);
+              this.showSheet = false;
+            })
+          }, (profile: ModelProfile) => `${profile.providerId}_${profile.modelId}`)
         }
-        ForEach(this.profiles, (profile: ModelProfile) => {
-          Row({ space: Layout.s2 }) {
-            Text(profile.label)
+        .width('100%')
+
+        Column({ space: Layout.s3 }) {
+          Row() {
+            Text('思考强度')
               .fontSize(Layout.fontBody)
               .fontWeight(FontWeight.Medium)
-              .fontColor(profile.modelId === this.modelId && profile.providerId === this.providerId
-                ? Theme.brand : Theme.textPrimary)
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .fontColor(Theme.textPrimary)
               .layoutWeight(1)
-            Text(vendorLabel(profile.providerId))
-              .fontSize(Layout.fontSmall)
-              .fontColor(Theme.textTertiary)
+            Text(EffortLevels.short(this.thinkingLevel))
+              .fontSize(Layout.fontUi)
+              .fontWeight(FontWeight.Bold)
               .fontFamily('monospace')
-            if (profile.modelId === this.modelId && profile.providerId === this.providerId) {
-              SymbolGlyph(Icons.check).fontSize(Layout.iconM).fontColor([Theme.brand])
-            }
+              .fontColor(Theme.brand)
           }
           .width('100%')
-          .padding({ left: Layout.s4, right: Layout.s4, top: 12, bottom: 12 })
-          .borderRadius(Layout.radiusL)
-          .backgroundColor(profile.modelId === this.modelId && profile.providerId === this.providerId
-            ? Theme.brandSubtle : Theme.bgSurface)
-          .border({
-            width: 1,
-            color: profile.modelId === this.modelId && profile.providerId === this.providerId
-              ? Color.Transparent : Theme.border
-          })
-          .stateStyles({ pressed: this.pillPressed, normal: this.pillNormal })
-          .onClick(() => {
-            this.onSelectModel(profile.providerId, profile.modelId);
-            this.showSheet = false;
-          })
-        }, (profile: ModelProfile) => `${profile.providerId}_${profile.modelId}`)
-      }
-      .width('100%')
 
-      Column({ space: Layout.s3 }) {
-        Row() {
-          Text('思考强度')
-            .fontSize(Layout.fontBody)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(Theme.textPrimary)
-            .layoutWeight(1)
-          Text(EffortLevels.short(this.thinkingLevel))
-            .fontSize(Layout.fontUi)
-            .fontWeight(FontWeight.Bold)
-            .fontFamily('monospace')
-            .fontColor(Theme.brand)
-        }
-        .width('100%')
+          Slider({
+            value: this.effortIndex(),
+            min: 0,
+            max: EffortLevels.ALL.length - 1,
+            step: 1,
+            style: SliderStyle.OutSet
+          })
+            .selectedColor(Theme.brand)
+            .blockColor(Theme.brand)
+            .trackThickness(4)
+            .width('100%')
+            .onChange((value: number, mode: SliderChangeMode) => {
+              this.onSelectThinking(EffortLevels.byIndex(Math.round(value)).level);
+            })
 
-        Slider({
-          value: this.effortIndex(),
-          min: 0,
-          max: EffortLevels.ALL.length - 1,
-          step: 1,
-          style: SliderStyle.OutSet
-        })
-          .selectedColor(Theme.brand)
-          .blockColor(Theme.brand)
-          .trackThickness(4)
+          Row() {
+            ForEach(EffortLevels.ALL, (option: EffortOption, index: number) => {
+              Text(option.short)
+                .fontSize(Layout.fontCaption)
+                .fontFamily('monospace')
+                .fontWeight(index === this.effortIndex() ? FontWeight.Medium : FontWeight.Normal)
+                .fontColor(index === this.effortIndex() ? Theme.brand : Theme.textTertiary)
+                .layoutWeight(1)
+                .textAlign(TextAlign.Center)
+            }, (option: EffortOption) => option.level)
+          }
           .width('100%')
-          .onChange((value: number, mode: SliderChangeMode) => {
-            this.onSelectThinking(EffortLevels.byIndex(Math.round(value)).level);
-          })
-
-        Row() {
-          ForEach(EffortLevels.ALL, (option: EffortOption, index: number) => {
-            Text(option.short)
-              .fontSize(Layout.fontCaption)
-              .fontFamily('monospace')
-              .fontWeight(index === this.effortIndex() ? FontWeight.Medium : FontWeight.Normal)
-              .fontColor(index === this.effortIndex() ? Theme.brand : Theme.textTertiary)
-              .layoutWeight(1)
-              .textAlign(TextAlign.Center)
-          }, (option: EffortOption) => option.level)
         }
         .width('100%')
+        .padding({ left: Layout.s4, right: Layout.s4, top: Layout.s4, bottom: Layout.s3 })
+        .borderRadius(Layout.radiusL)
+        .backgroundColor(Theme.bgSurface)
+        .border({ width: 1, color: Theme.border })
       }
-      .width('100%')
-      .padding({ left: Layout.s4, right: Layout.s4, top: Layout.s4, bottom: Layout.s3 })
-      .borderRadius(Layout.radiusL)
-      .backgroundColor(Theme.bgSurface)
-      .border({ width: 1, color: Theme.border })
     }
     .width('100%')
     .height('100%')
@@ -159,23 +192,35 @@ export struct ModelCapsule {
 
   build() {
     Row({ space: 6 }) {
-      Text(this.modelLabel.length > 0 ? this.modelLabel : '模型')
-        .fontSize(Layout.fontUi)
-        .fontWeight(FontWeight.Medium)
-        .fontColor(Theme.textPrimary)
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .constraintSize({ maxWidth: 160 })
-      Text('·')
-        .fontSize(Layout.fontUi)
-        .fontColor(Theme.textTertiary)
-      Text(EffortLevels.short(this.thinkingLevel))
-        .fontSize(Layout.fontSmall)
-        .fontFamily('monospace')
-        .fontColor(Theme.textSecondary)
-      SymbolGlyph(Icons.chevronDown)
-        .fontSize(Layout.iconS)
-        .fontColor([Theme.textTertiary])
+      if (this.profiles.length === 0) {
+        SymbolGlyph(Icons.model).fontSize(Layout.iconS).fontColor([Theme.textTertiary])
+        Text('未选择模型')
+          .fontSize(Layout.fontUi)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(Theme.textSecondary)
+          .maxLines(1)
+        SymbolGlyph(Icons.chevronDown)
+          .fontSize(Layout.iconS)
+          .fontColor([Theme.textTertiary])
+      } else {
+        Text(this.modelLabel.length > 0 ? this.modelLabel : '未选择模型')
+          .fontSize(Layout.fontUi)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(Theme.textPrimary)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .constraintSize({ maxWidth: 160 })
+        Text('·')
+          .fontSize(Layout.fontUi)
+          .fontColor(Theme.textTertiary)
+        Text(EffortLevels.short(this.thinkingLevel))
+          .fontSize(Layout.fontSmall)
+          .fontFamily('monospace')
+          .fontColor(Theme.textSecondary)
+        SymbolGlyph(Icons.chevronDown)
+          .fontSize(Layout.iconS)
+          .fontColor([Theme.textTertiary])
+      }
     }
     .height(34)
     .padding({ left: 12, right: 10 })

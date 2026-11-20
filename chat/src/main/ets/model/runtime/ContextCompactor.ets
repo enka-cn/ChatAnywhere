@@ -4,7 +4,7 @@
  * 红线：压缩只把旧节点标记 archived（原文仍在 RDB 与 FTS5），永不物理删除；
  * 自动整理失败不打断对话，手动整理只给中文提示。
  */
-import { ConversationNode } from '@app/core_model';
+import { ConversationNode, estimateNodesTokens } from '@app/core_model';
 import { CompactionDecision, CompactorInput, TextSummarizer } from '@app/core_context';
 import { ModelProfile } from '@app/core_protocol';
 import { RuntimeHost } from './RuntimeTypes';
@@ -91,6 +91,13 @@ export class ContextCompactor {
       if (summary.length > 0) {
         this.host.setMemorySummary(summary);
       }
+      // v3.2：记录「最近一次整理」的前后 Token 与摘要全文（失败路径不写，保留上一次成功值）。
+      snapshot.lastCompactionAt = Date.now();
+      snapshot.lastCompactionBeforeTokens = estimateNodesTokens(path);
+      snapshot.lastCompactionAfterTokens = outcome.afterTokens;
+      if (summary.length > 0) {
+        snapshot.lastCompactionSummary = summary;
+      }
       // 压缩后上一轮的 input_tokens 已经不代表当前上下文了，清掉让记忆条按新内容重算。
       this.host.metrics().usageInputTokens = 0;
       // 顺带把更早的大载荷标记为已归档（DB 侧记录，UI 不受影响）
@@ -109,6 +116,8 @@ export class ContextCompactor {
       snapshot.noticeMessage = `这次没有整理对话记忆：${(e as Error).message}`;
     } finally {
       snapshot.compacting = false;
+      // 整理中 → 完成（或失败回退）都立刻通知 UI，指标/记忆条无需等下一轮。
+      this.host.notifyNow();
     }
   }
 

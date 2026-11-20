@@ -5,7 +5,7 @@
 > UI 按 [`docs/design/chatanywhere_v3_pura_x_max.html`](docs/design/chatanywhere_v3_pura_x_max.html) 设计稿落地：**华为 Pura X Max 折叠形态（5.4″ 外屏 / 7.7″ 阔内屏）双栏 Master-Detail**、6 档思考、Cherry Studio 级角色配置、SKILL.md 编辑器。
 >
 > **交付状态**：4 个 HAR + entry HAP 全部落地，`hvigor assembleHap` **BUILD SUCCESSFUL**；
-> 纯逻辑 Node 单测 **28 个文件 / 458 条断言全绿**（含 26 项设计/架构静态门禁）；受环境限制（无签名证书、无模型 API Key）未做真机联调，详见 [§5 已知限制](#5-已知限制透明说明)。
+> 纯逻辑 Node 单测 **30 个文件 / 475 条断言全绿**（含 37 项设计/架构静态门禁）；受环境限制（无签名证书、无模型 API Key）未做真机联调，详见 [§5 已知限制](#5-已知限制透明说明)。
 
 ---
 
@@ -86,7 +86,7 @@ ChatAnyWhere/
 │       │                   SettingsController / PromptComposer / NodeFactory 等（均 ≤500 行）
 │       ├── pages/          ChatPage（双栏/折叠主对话页）、SkillCreatorPage（SKILL.md 编辑器）、
 │       │                   SkillManagerPage（技能 Master-Detail）、SettingsPage（设置 Master-Detail）
-│       ├── components/     IconBtn（统一图标按钮）、MarkdownBlock、StreamingMessage、MemoryGaugeBar、MessageDataSource、
+│       ├── components/     IconBtn（统一图标按钮）、VendorCard（模型厂商卡）、PersonaAvatarPicker（头像选择）、MarkdownBlock、StreamingMessage、MemoryGaugeBar、MessageDataSource、
 │       │                   SessionDrawer、SourcePane、AttachSheet、PersonaSheet、ModelCapsule、BranchSelector、
 │       │                   Settings*View（角色/模型/记忆/跨端）、SkillCard、SkillDetailView、ConfigForm、
 │       │                   CreatorMasterList、SkillMdPreview
@@ -133,7 +133,10 @@ ChatAnyWhere/
 | 主对话体验（v3） | chat | **折叠/双栏响应式**（≥600vp：232 会话栏 + 680 画布 + 288 信源栏；折叠：单栏 + 抽屉）；顶栏 44 模型胶囊（6 档）+ 角色胶囊 + 新对话；用户深色气泡 / AI 无气泡通栏；思考胶囊 + 检索步骤；复制/重试/分支 `<1/3>`/来源滑出；一体胶囊输入（「+」仅附件：相册/文档/链接）+ 附件 chips；`LazyForEach` + cachedCount(6)；记忆条 <60% 隐藏 |
 | 角色与思考（v3） | chat/app | 6 档思考（关闭/Min/Low/Med/High/xHigh，三厂商离线映射）；Cherry Studio 级角色：系统提示词 + `{{date}}`/`{{clipboard}}`、默认模型、Temperature 0–2、Top-P、上下文轮数、默认绑定技能；新会话继承全局默认角色 |
 | 技能三级继承 | chat/app | 全局总开关 ⊂ 角色默认绑定 ⊂ 当前对话临时开关；运行时只注入生效技能；对话页「本对话技能」chips 实时切换 |
-| 设计系统（v3.1） | chat/app/Theme.ets + components/IconBtn.ets | Pura X Max 精确色板（品牌蓝 `#2563EB`/`#4F83FF`）、原生舒适字号阶梯（正文档 15.5/行高 26）、尺寸（顶栏 48/折叠 44、栏宽 232·236·220、信源 288、输入圆角 24）、`IconBtn` 统一居中图标按钮（按压微缩反馈）；`base/dark` 38 键；禁止硬编码色值 |
+| 设计系统（v3.1） | chat/app/Theme.ets + components/IconBtn.ets | Pura X Max 精确色板（品牌蓝 `#2563EB`/`#4F83FF`）、原生舒适字号阶梯（正文档 15.5/行高 26）、尺寸（顶栏 48/折叠 44、栏宽 232·236·220、信源 288、输入圆角 24）、`IconBtn` 统一居中图标按钮（按压微缩反馈）；`base/dark` 46 键（含 8 个角色头像低饱和底色）；禁止硬编码色值 |
+| 角色与提示词（v3.2） | chat/app + SettingsPersonaView | **二级视图**：一级纵向列表（40×40 圆形头像 + 名称 + 默认标识 + 绑定模型摘要 + 右箭头，支持搜索/新建）→ 二级编辑（头像可选 10 图标 × 8 低饱和配色、提示词/采样参数/技能绑定/复制/删除/设默认）；`avatarIcon/avatarTone` 旧数据兼容 |
+| 真实模型与密钥（v3.2） | core_protocol + core_model + SettingsModelsView | **不再内置任何占位模型**：厂商预设 + 真实 `/models` 探测（DeepSeek / Anthropic / OpenAI 兼容），探测结果落 RDB `provider_models`，勾选启用的模型才出现在顶栏与角色配置；测试连接/拉取支持输入框未保存的新 Key；`VendorCard` 独立组件修复状态不刷新 |
+| 记忆与缓存（v3.2） | chat | 设置页显示**当前对话**（标题/消息数/上下文 Token 与窗口占比/缓存命中率）+「立即整理记忆」；**最近整理结果**（时间、整理前 → 整理后 Token、可展开摘要全文） |
 | 设置与技能管理（v3） | chat | 设置 Master-Detail（角色与提示词 / 模型与密钥 / 记忆与缓存 / 跨端与数据，`category` 直达）；技能 Master-Detail（开关、schema 参数、回滚/试跑/导出/删除、编辑 SKILL.md） |
 | 系统桥接 | chat/bridge | 分享链接接收与清洗摘要、后台进度通知、局域网 HTTP 编辑器（裸 TCP） |
 
@@ -175,8 +178,8 @@ pwsh tools/build.ps1
 
 | 项 | 现状 | 原因 / 影响 |
 | --- | --- | --- |
-| 真机或模拟器联调 | **未执行** | 无模型 API Key；且本机 DevEco 自动签名材料在 CLI 下报 `11014003`（环境问题），CLI 只能做 unsigned 编译校验；真机安装请在 DevEco Studio 中运行 |
-| 真实网络链路 | 未端到端跑通 | 无 Key/无外网；rcp 流式、Search/Fetch、MCP 均按官方文档与 SDK d.ts 实现，解析器可容错 |
+| 真机或模拟器联调 | **未执行** | 无模型 API Key；CLI 仅能编译校验。公开仓库的 `build-profile.json5` 已脱敏（`signingConfigs: []`），本机签名材料备份在 gitignore 的 `build-profile.local.json5`；真机安装需在 DevEco Studio 重新自动签名 |
+| 真实网络链路 | 未端到端跑通 | 无 Key/无外网；rcp 流式、Search/Fetch、MCP、**真实 `/models` 模型探测**均按官方文档与 SDK d.ts 实现，解析器可容错（探测解析有合成 fixture 单测） |
 | 原生 `native_core`（C++ NAPI） | 以纯 ArkTS 等价实现替代 | 无 QuickJS-NG 源码与 NDK 交叉编译验证条件；ArkTS 版可编译、可测 |
 | L3 QuickJS 端侧脚本沙箱 | 接口/白名单/校验完整，执行返回明确中文错误；**UI 已隐藏 L3 入口** | 同上；不静默失败，也不在界面上暴露半成品 |
 | 端侧实况窗 | 降级为「系统通知 + 应用内进度条」 | 本 SDK 不存在三方可用的 `@ohos.app.ability.LiveView`（见 API_REFERENCE §9） |

@@ -662,3 +662,118 @@ Warnings 仍为 `Function may throw exceptions` 咨询类（`RdbRepository`/`Ses
 - **断言复核**：Lead 更新的 `91` 侧栏基线与 v3.1 源码一致；QA 仅增强测试覆盖度（未改业务源码）。
 - **缺陷**：本轮**未发现需要修复的缺陷**。
 - **残余**：观感/动效/性能仍需按 §14.6 真机冒烟；无真机前不得宣布 v3.1 视觉 DoD 达成。
+
+---
+
+## 15. v3.2 真机反馈修复验收（注册表/真实模型/记忆透明化）
+
+> 验收人：`qa-verify`；数据快照：构建 2026-11-20 18:02:26–18:03:06；用例 2026-11-20 18:02:23（Asia/Shanghai）。
+> 范围（task-21..25）：三项真机反馈修复 —— ①模型/密钥页保存后状态不刷新；②模型列表是内置占位假模型；③记忆整理不透明。
+> **验证前提不变**：无真机联调（无设备 / 无 API Key）；验证 = ArkTS 编译期类型检查 + 纯逻辑单测 + v3.2 静态断言 + 代码审查。
+> 本轮构建配置按公开仓库要求**已脱敏**：`build-profile.json5` 的 `signingConfigs: []`，本机签名材料移到被 `.gitignore` 忽略的 `build-profile.local.json5`（因此本轮 HAP 构建**不再需要 unsigned 回退**，也没有 `11014003` 签名失败）。
+
+### 15.1 改动面
+
+| 层 | 改动 |
+| --- | --- |
+| `packages/core_model` | 新增 `provider_models` 表（RdbRepository:105 建表 + :283 执行 + 索引）+ `interfaces/ModelRegistryApi.ets`（4 方法）+ Index 导出 `ProviderModelRecord/ModelRegistryApi` |
+| `packages/core_protocol` | `ModelCatalog` 重写为「厂商预设 + RDB 注册表」真实目录（368 行，无任何硬编码模型 id）；新增纯逻辑 `util/RemoteModels.ets`（`parseModelsResponse/modelsUrl/openAiCompatModelsUrl/modelIdsOf`，164 行）并 Index 导出；`ProtocolLayer` 的 `testConnection/listRemoteModels` 增加 `apiKeyOverride` 第二参数 |
+| chat·设置页 | 角色一级列表 + 二级编辑（`PersonaAvatars` 10 图标 × 8 配色）；模型页 `VendorCard` 独立 `@Component` + 真实拉取/勾选落库；记忆页记忆卡（当前对话/立即整理/最近整理前后 Token+摘要） |
+| chat·运行时/对话页 | `RuntimeSnapshot` 增 `hasModel` + 4 个整理字段（共 5 项扩展）；无模型中文引导；真实模型胶囊/角色头像；`persona.modelId` 空=跟随当前模型 |
+| 构建配置 | `build-profile.json5` 脱敏（`signingConfigs: []`）；`build-profile.local.json5` 本机材料 + `.gitignore` 忽略 |
+
+### 15.2 构建矩阵（脱敏构建配置，无 unsigned 回退）
+
+| 目标 | 结果 | 开始时间 | 日志 | 备注 |
+| --- | --- | --- | --- | --- |
+| `core_model` | **BUILD-OK** | 18:02:26 | `build-logs/core_model-20261120-180226.log` | 0 error / 0 warning |
+| `core_protocol` | **BUILD-OK** | 18:02:30 | `build-logs/core_protocol-20261120-180231.log` | 0 error / 0 warning |
+| `core_context` | **BUILD-OK** | 18:02:37 | `build-logs/core_context-20261120-180237.log` | 0 error / 30 warning（依赖重编译：RdbRepository 27 + SessionExporter 3） |
+| `core_plugin` | **BUILD-OK** | 18:02:50 | `build-logs/core_plugin-20261120-180251.log` | 0 error / 33 warning（+RcpStreamClient 2 + NetHttp 1） |
+| `chat`（entry HAP，含全部 HAR） | **BUILD-OK** | 18:03:06 | `build-logs/all-20261120-180307.log` | 0 error / 0 warning（增量复用上轮编译产物） |
+
+| 项 | 构建前 | 构建后 |
+| --- | --- | --- |
+| `build-profile.json5` SHA256 | `64849EA5196064CE6DA4A4ED7469B3FE20FC0FFCF2F2CEBCCCBFCDD227067BB1` | **同值** |
+| 文件大小 | 1621 bytes | 1621 bytes |
+| 签名配置 | `signingConfigs: []`（脱敏） | 同（构建不写回） |
+
+说明：所有 warning 仍为 `ArkTS:WARN Function may throw exceptions. Special handling is required.`（平台 API 建议性提示，`RdbRepository`/`SessionExporter`/`RcpStreamClient`/`NetHttp`），本轮未新增 error。
+
+### 15.3 用例统计（最终）
+
+| 指标 | 值 |
+| --- | --- |
+| 运行时间 | **2026-11-20 18:02:23** |
+| 用例文件 | **30 个** |
+| 断言级用例 | **475 条** |
+| 通过 / 失败 / 跳过 | **475 / 0 / 0** |
+| 结果 | `RESULT: PASS`（`run.ps1` 退出码 0） |
+| prepare 产物 | 拷贝 51 个纯逻辑文件（新增 `ModelCatalog.ets`/`util/RemoteModels.ets`）；跳过 5；清单未命中 1；0 告警 |
+
+本轮测试基线更新（均为**测试侧**改动，未改业务源码）：
+- **重写** `36-model-catalog.test.mjs`（11 用例）：默认空目录/无硬编码模型 id/三厂商预设/`buildProfile`（含 OpenAI 兼容思考推断）/`init` 从 fake 注册表装载 enabled/`applyDiscoveredModels` 保留勾选与去重/`setModelEnabled`/`defaultProfile=null`/`register` 临时覆盖/自定义端点地址跟随设置。
+- **新增** `45-remote-models.test.mjs`（12 用例）：`parseModelsResponse` 的 `data[]`/`models[]`/裸数组/`model`/`name` 变体/坏 JSON→[]/去重/displayName 回退；`modelsUrl` 三家端点与 `/v1` 去重。
+- **更新** `90`（色键 38→**46**、interfaces 19→**20**、签名断言改为「已脱敏：无绝对路径/明文口令 + local 备份被 gitignore」）、`91`（色键 46）。
+- **新增** `92-design-v32-static.test.mjs`（11 用例）：三项 Bug 根因与契约落盘（见 §15.4）。
+
+### 15.4 三项 Bug 根因修复证据（`92` 11/11 通过）
+
+| Bug | 根因 | 修复证据（静态可验证） |
+| --- | --- | --- |
+| ① 模型/密钥页保存后状态**不刷新** | 按值传参的 `@Builder vendorCard(...)`，父状态更新不会重建已按值捕获的 UI | 新增独立 `components/VendorCard.ets`（197 行，`@Component` + `@Prop` 接收 configured/url/testing/pulling 等状态）；`SettingsModelsView.ets:416/438/461` 三处渲染 `VendorCard({...})`；全文件**无** `@Builder vendorCard(` |
+| ② 模型列表是**内置占位假模型** | `ModelCatalog` 硬编码 5 个模型；无真实探测与注册表 | `ModelCatalog.ets` 368 行重写：**0 个** `deepseek-flash/deepseek-v4-pro/claude-sonnet/claude-opus/gpt-4.1-mini`；保留三厂商预设（providerId/协议/地址/缓存经济性/能力）；实现 `init/hasModels/defaultProfile(null)/providerMeta/buildProfile/applyDiscoveredModels/setModelEnabled`；真实端点 `util/RemoteModels.ets`（DeepSeek `/models`、Anthropic `/v1/models`、OpenAI 兼容含 `/v1` 去重）；`ProtocolLayer` 探测支持未保存新 Key（`apiKeyOverride`）；设置页 `testConnection`(:266)/`listRemoteModels`(:287)/`applyDiscoveredModels`(:292) 闭环；`RdbRepository` 建 `provider_models` 表（:105）并实现 4 个注册表方法（:1190/:1269/:1293/:1330）；`core_model.Index` 导出 `ProviderModelRecord/ModelRegistryApi` |
+| ③ 记忆整理**不透明** | 快照无整理指标、设置页看不到前后变化 | `ChatRuntimeApi.RuntimeSnapshot` 增 5 字段（`:90 hasModel`、`:92/:94/:96/:98 lastCompactionAt/BeforeTokens/AfterTokens/Summary`）；`SettingsMemoryView.ets:22` 状态、`:65–68` 从快照同步、`:92` `compactNow()`、`:98` 调 `getChatRuntime().compactNow()`；记忆卡展示当前对话/立即整理/上次整理前后 Token 与摘要 |
+
+附带修复（同轮）：
+- **角色二级列表 + 头像**：`PersonaProfile.avatarIcon/avatarTone`（PersonaStore:29/31），`sanitize` 对旧数据回退默认 `persona`/`blue`（PersonaStore:330+）；`PersonaAvatars.ets` **10 个 ICONS**（:27–38）+ **8 个 TONES**（:40–49）+ `iconOf/toneOf`（:52/:62）；`SettingsPersonaView` 引用 `PersonaAvatars` + `selectedId` 列表↔详情（`openDetail`/`backToList`）。
+- **无模型引导**：`ChatPage.ets:722/1342` 用 `snapshot.hasModel` 显示中文引导；`:569` 跳转 `SettingsPageParams { category: 'models' }`。
+- **角色空 modelId=跟随当前模型**：`PersonaSheet.ets:29`、`SettingsPersonaView.ets:19`、`SettingsController.ets:149` 三处语义一致。
+
+### 15.5 静态断言总览
+
+| 文件 | 结果 | 覆盖 |
+| --- | --- | --- |
+| `92-design-v32-static` | **11/11 PASS** | v3.2 三项 Bug 根因、注册表/provider_models、RemoteModels 导出、头像 10×8、46 色键、脱敏构建配置 |
+| `90-refactor-static` | **11/11 PASS** | 46 色键/8 avatar_bg_*、interfaces 20、脱敏签名断言、入口/L3/虚列表/契约/行数等 R2 基线 |
+| `91-design-v3-static` | **15/15 PASS** | v3/v3.1 设计基线（双栏/6 档/角色/附件/SKILL.md/IconBtn/25 项令牌）同步 46 色键 |
+| 合计 | **37/37 PASS** | — |
+
+### 15.6 契约 / 回归
+
+| 项 | 证据 |
+| --- | --- |
+| `core_model` 本轮新增能力（已登记） | `Index.ets` 17:38:13 变更 `EFB010538B6C3B28`（+`ProviderModelRecord/ModelRegistryApi`）；新增 `interfaces/ModelRegistryApi.ets` `09010EEEE00B5DEB`（33 行，4 方法）；`RdbRepository.ets` 17:42:06 增 `provider_models` 表与注册表方法 |
+| `core_protocol` 本轮新增能力（已登记） | `Index.ets` 17:43:55 变更 `24239D429861F111`（+RemoteModels 4 个导出）；`ModelCatalog.ets` 17:48:47 `2EB28E2AE9C243E4`（368 行，去占位重写）；新增 `util/RemoteModels.ets` `B6FF6107D3B9731A`（164 行） |
+| `ChatRuntimeApi` 扩展（已登记） | 17:38:13 `BBEC5EB0320C5919`（148 行）：新增 `hasModel` + 4 个整理字段（5 字段扩展），方法签名未破坏 |
+| 未改动 | `core_context` 源码最新 mtime 仍 2026-11-19 19:45:16；`main_pages.json` 仍 **4 页** |
+| 行数约束 | `ChatRuntime.ets` 非空 **338** 行；`SessionController` 409、`StreamTurnExecutor` 401（`runtime/*` 全部 ≤500） |
+| 跨轮回归 | R1/R2/v3/v3.1 全部用例保持绿（475/475），v3.1 打磨断言（IconBtn/字号/侧栏 232/236/220）无回归 |
+
+### 15.7 未覆盖项与风险
+
+| # | 风险/未覆盖 | 说明 |
+| --- | --- | --- |
+| 1 | **无真机联调仍成立** | 保存密钥后的即时状态刷新（VendorCard `@Prop` 重渲染）、测试连接网络往返、真实 `/models` 拉取/勾选/顶栏出现、记忆卡数值观感、折叠手势/深色/Picker/键盘避让均未设备验证 |
+| 2 | **无 API Key** | 三家真实 `/models` 响应（DeepSeek/Anthropic/OpenAI 兼容）只用官方同形合成 fixture 验证解析；真实鉴权失败/限流/空列表路径未联网 |
+| 3 | 真实端点差异 | Anthropic `x-api-key` + `anthropic-version` 头、OpenAI 兼容中转站 `display_name` 变体等按文档实现，需真机联调确认 |
+| 4 | RDB 注册表 | `provider_models` 建表/事务/迁移只在编译期验证，设备端「重启后模型列表仍在」需真机验收 |
+| 5 | 咨询类 warning | 模块重编译出现 30/33 条 `Function may throw exceptions`（RdbRepository/SessionExporter/RcpStreamClient/NetHttp），0 error；非 v3.2 新增 |
+| 6 | 构建配置脱敏 | 本轮 HAP 为纯 `BUILD-OK`（无 unsigned 回退）；**未产出可安装签名包**，如本机要安装需用 `build-profile.local.json5` 临时替换 |
+| 7 | 静态门禁基线 | 46 色键/20 interfaces/10×8 头像/固定文案等用于防回退，后续有意调整需同步更新断言 |
+
+**建议真机冒烟清单（v3.2 重点）**：
+1. **模型链路**：设置→模型与密钥 → 输入新 Key（未保存）→「测试连接」即时出结果 → 「拉取模型」出真实清单 → 勾选 1-2 个 → 保存 → **状态立即刷新为「已加密保存/已启用」**（不重启）→ 返回对话页顶栏出现真实模型胶囊 → 角色编辑里可选该模型。
+2. **无模型引导**：清空/新装（无模型）→ 对话页出现中文引导 → 点击直达设置 `category=models` → 拉取并勾选后引导消失。
+3. **记忆透明化**：设置→记忆与缓存 → 当前对话卡显示 Token/占用 → 点「立即整理」→ 显示「正在生成检查点摘要…」→ 完成后最近整理卡显示前后 Token 与摘要摘要 → 返回对话页记忆条数值一致。
+4. **角色**：设置→角色与提示词 → 一级列表（头像 40×40/默认标识/绑定模型/搜索/新建）→ 进二级编辑换头像（10 图标×8 配色）→ 保存 → 列表头像即时更新；角色绑定模型为空时对话框显示「跟随当前模型」。
+5. **回归**：折叠/展开、6 档思考、附件、SKILL.md 编辑、技能开关等 v3/v3.1 功能无回归。
+
+### 15.8 结论
+
+- **构建**：最终快照（18:02:26–18:03:06）5/5 BUILD-OK，0 error；构建配置已脱敏（`signingConfigs: []`），`build-profile.json5` SHA256 前后一致（`64849EA5…067BB1`），本机签名材料仅存于 gitignore 的 `build-profile.local.json5`。
+- **用例**：**30 文件 / 475 断言全绿**（0 失败 / 0 跳过）；prepare 51 拷贝/0 告警；新增 v3.2 目录/探测/静态用例 23 条。
+- **三项 Bug 根因修复**均在静态与单测层得到证据：@Builder 按值传参已消除（独立 VendorCard）、占位模型已清零（真实探测 + RDB 注册表）、记忆透明化 5 指标 + UI 卡已接线。
+- **契约**：core_model/core_protocol 为新增能力且已登记；`main_pages` 4 页；行数约束保持。
+- **缺陷**：本轮**未发现需要修复的缺陷**。
+- **残余**：真实网络/真机链路（Key 保存刷新、测试连接、真实 /models、RDB 重启保持、观感）仍需按 §15.7 冒烟；无真机前不得宣布 v3.2 真机反馈闭环达成。

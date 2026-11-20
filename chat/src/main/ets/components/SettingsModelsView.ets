@@ -1,40 +1,46 @@
 /**
- * 设置 · 模型与密钥（v3 卡片）。
+ * 设置 · 模型与密钥（v3.2 真实模型探测）。
  *
- * DeepSeek / Anthropic / OpenAI 兼容三张卡片：名称 + 状态 + 地址 + API Key；
- * Key 只进 Asset Store，界面只显示「已加密保存」。另有当前模型选择列表。
+ * 三张厂商卡（独立 @Component VendorCard，状态实时刷新）：
+ * 地址 / Key / 状态 / 测试连接 / 拉取模型；拉取后把真实模型写入 RDB 注册表，
+ * 展示可勾选列表；「当前模型」只展示 catalog.listProfiles() 中真实启用的模型。
  */
-import { SecretAliases, SettingsKeys } from '@app/core_model';
-import { ConnectionTestResult, ModelProfile } from '@app/core_protocol';
+import { ProviderModelRecord, SecretAliases, SettingsKeys } from '@app/core_model';
+import { ConnectionTestResult, ModelProfile, ProtocolKind } from '@app/core_protocol';
 import { AppServices } from '../app/AppServices';
 import { Icons, Layout, Theme } from '../app/Theme';
+import { VendorCard } from './VendorCard';
 
-const VENDOR_DS: string = 'deepseek';
-const VENDOR_AN: string = 'anthropic';
-const VENDOR_OA: string = 'custom';
+const PID_DS: string = 'deepseek';
+const PID_AN: string = 'anthropic';
+const PID_OA: string = 'openai_compat';
 
 @Component
 export struct SettingsModelsView {
+  @State private dsUrl: string = 'https://api.deepseek.com';
+  @State private anUrl: string = '';
+  @State private oaUrl: string = '';
+  @State private oaModel: string = '';
+
   @State private dsConfigured: boolean = false;
   @State private anConfigured: boolean = false;
   @State private oaConfigured: boolean = false;
 
-  @State private dsUrl: string = 'https://api.deepseek.com';
-  @State private anUrl: string = 'https://api.anthropic.com';
-  @State private oaUrl: string = '';
-  @State private oaModel: string = '';
-  @State private dsKey: string = '';
-  @State private anKey: string = '';
-  @State private oaKey: string = '';
-
   @State private dsTesting: boolean = false;
   @State private anTesting: boolean = false;
   @State private oaTesting: boolean = false;
-  @State private dsResult: string = '';
-  @State private anResult: string = '';
-  @State private oaResult: string = '';
+  @State private dsPulling: boolean = false;
+  @State private anPulling: boolean = false;
+  @State private oaPulling: boolean = false;
+  @State private dsTestResult: string = '';
+  @State private anTestResult: string = '';
+  @State private oaTestResult: string = '';
+  @State private dsPullResult: string = '';
+  @State private anPullResult: string = '';
+  @State private oaPullResult: string = '';
 
   @State private profiles: ModelProfile[] = [];
+  @State private records: ProviderModelRecord[] = [];
   @State private activeModelId: string = '';
   @State private statusText: string = '';
 
@@ -49,94 +55,201 @@ export struct SettingsModelsView {
       this.dsConfigured = await model.secrets.has(SecretAliases.DEEPSEEK);
       this.anConfigured = await model.secrets.has(SecretAliases.ANTHROPIC);
       this.oaConfigured = await model.secrets.has(SecretAliases.OPENAI_COMPAT);
-      this.anUrl = await model.repo.getString(SettingsKeys.ANTHROPIC_BASE_URL, 'https://api.anthropic.com');
+      this.anUrl = await model.repo.getString(SettingsKeys.ANTHROPIC_BASE_URL, '');
       this.oaUrl = await model.repo.getString(SettingsKeys.CUSTOM_BASE_URL, '');
       this.oaModel = await model.repo.getString(SettingsKeys.CUSTOM_MODEL_ID, '');
-      const active: ModelProfile = await services.resolveActiveProfile();
-      this.activeModelId = active.modelId;
-      this.applyProfiles(services.requireProtocol().catalog.listProfiles());
+      const catalog = services.requireProtocol().catalog;
+      if (this.anUrl.length === 0) {
+        const meta = catalog.providerMeta(PID_AN);
+        this.anUrl = meta !== null ? meta.defaultBaseUrl : 'https://api.anthropic.com';
+      }
+      if (this.oaUrl.length === 0) {
+        const meta = catalog.providerMeta(PID_OA);
+        this.oaUrl = meta !== null ? meta.defaultBaseUrl : 'https://api.openai.com/v1';
+      }
+      await this.reloadCatalog();
+      await this.reloadRecords();
     } catch (e) {
-      this.statusText = `${(e as Error).message}`;
+      this.setStatus(`${(e as Error).message}`);
     }
   }
 
-  private applyProfiles(all: ModelProfile[]): void {
-    const custom: string = this.oaModel.trim();
-    const list: ModelProfile[] = [];
-    for (const one of all) {
-      if (one.providerId === VENDOR_OA && custom.length > 0 && one.modelId !== custom) {
-        continue;
+  private async reloadCatalog(): Promise<void> {
+    try {
+      const services = AppServices.get();
+      const catalog = services.requireProtocol().catalog;
+      this.profiles = catalog.listProfiles();
+      const stored: string = await services.requireModel().repo.getString(SettingsKeys.ACTIVE_MODEL, '');
+      if (stored.length > 0) {
+        const found: ModelProfile | null = catalog.findByModelId(stored);
+        this.activeModelId = found !== null ? found.modelId : '';
+      } else {
+        this.activeModelId = '';
       }
-      list.push(one);
+      if (this.activeModelId.length === 0 && this.profiles.length > 0) {
+        const fallback: ModelProfile | null = catalog.defaultProfile();
+        this.activeModelId = fallback !== null ? fallback.modelId : this.profiles[0].modelId;
+      }
+    } catch (e) {
+      this.setStatus(`${(e as Error).message}`);
     }
-    this.profiles = list;
+  }
+
+  private async reloadRecords(): Promise<void> {
+    try {
+      this.records = await AppServices.get().requireModel().repo.loadModels();
+    } catch (e) {
+      this.records = [];
+    }
   }
 
   private setStatus(text: string): void {
     this.statusText = text;
   }
 
-  private findProfile(providerId: string): ModelProfile | null {
-    for (const one of this.profiles) {
+  private recordsFor(providerId: string): ProviderModelRecord[] {
+    const out: ProviderModelRecord[] = [];
+    for (const one of this.records) {
       if (one.providerId === providerId) {
-        return one;
+        out.push(one);
       }
     }
-    return null;
-  }
-
-  private findProfileByProtocol(protocol: string): ModelProfile | null {
-    for (const one of this.profiles) {
-      if (one.protocol === protocol) {
-        return one;
-      }
-    }
-    return null;
-  }
-
-  private defaultProfile(): ModelProfile {
-    return AppServices.get().requireProtocol().catalog.defaultProfile();
-  }
-
-  private withBaseUrl(source: ModelProfile, baseUrl: string): ModelProfile {
-    const out: ModelProfile = {
-      providerId: source.providerId,
-      modelId: source.modelId,
-      protocol: source.protocol,
-      baseUrl: baseUrl,
-      assetKeyAlias: source.assetKeyAlias,
-      contextWindow: source.contextWindow,
-      cacheMissToHitRatio: source.cacheMissToHitRatio,
-      cacheIdleTtlSec: source.cacheIdleTtlSec,
-      supportsServerWebTools: source.supportsServerWebTools,
-      supportsThinking: source.supportsThinking,
-      supportsJsonSchema: source.supportsJsonSchema,
-      label: source.label,
-      builtin: source.builtin
-    };
     return out;
   }
 
+  private profilesFor(providerId: string): ModelProfile[] {
+    const out: ModelProfile[] = [];
+    for (const one of this.profiles) {
+      if (one.providerId === providerId) {
+        out.push(one);
+      }
+    }
+    return out;
+  }
+
+  private titleFor(providerId: string): string {
+    if (providerId === PID_DS) {
+      return 'DeepSeek';
+    }
+    if (providerId === PID_AN) {
+      return 'Anthropic';
+    }
+    return 'OpenAI 兼容';
+  }
+
+  private aliasFor(providerId: string): string {
+    if (providerId === PID_DS) {
+      return SecretAliases.DEEPSEEK;
+    }
+    if (providerId === PID_AN) {
+      return SecretAliases.ANTHROPIC;
+    }
+    return SecretAliases.OPENAI_COMPAT;
+  }
+
+  private urlFor(providerId: string): string {
+    if (providerId === PID_DS) {
+      return this.dsUrl.trim();
+    }
+    if (providerId === PID_AN) {
+      return this.anUrl.trim();
+    }
+    return this.oaUrl.trim();
+  }
+
+  /** 测试/探测用的模型 id：优先已启用模型，其次已发现模型，最后厂商常用 id。 */
+  private probeModelId(providerId: string): string {
+    const enabled: ModelProfile[] = this.profilesFor(providerId);
+    if (enabled.length > 0) {
+      return enabled[0].modelId;
+    }
+    const discovered: ProviderModelRecord[] = this.recordsFor(providerId);
+    if (discovered.length > 0) {
+      return discovered[0].modelId;
+    }
+    if (providerId === PID_OA && this.oaModel.trim().length > 0) {
+      return this.oaModel.trim();
+    }
+    return '';
+  }
+
+  private protocolFor(providerId: string): ProtocolKind {
+    if (providerId === PID_DS) {
+      return 'deepseek_responses';
+    }
+    if (providerId === PID_AN) {
+      return 'anthropic_messages';
+    }
+    return 'openai_chat';
+  }
+
+  /** 构造探测/测试用 profile：优先用目录预设，缺失时按厂商容错构造。 */
+  private buildProfileFor(providerId: string): ModelProfile {
+    const modelId: string = this.probeModelId(providerId);
+    const url: string = this.urlFor(providerId);
+    try {
+      const built: ModelProfile | null =
+        AppServices.get().requireProtocol().catalog.buildProfile(providerId, modelId, url);
+      if (built !== null) {
+        return built;
+      }
+    } catch (e) {
+      // 落到下面的容错构造
+    }
+    const profile: ModelProfile = {
+      providerId: providerId,
+      modelId: modelId,
+      protocol: this.protocolFor(providerId),
+      baseUrl: url,
+      assetKeyAlias: this.aliasFor(providerId),
+      contextWindow: 128000,
+      cacheMissToHitRatio: 4,
+      cacheIdleTtlSec: 600,
+      supportsServerWebTools: providerId === PID_DS,
+      supportsThinking: true,
+      supportsJsonSchema: true,
+      label: this.titleFor(providerId),
+      builtin: true
+    };
+    return profile;
+  }
+
   // ---------------------------------------------------------------------------
-  // 保存
+  // 保存 / 测试 / 拉取 / 勾选
   // ---------------------------------------------------------------------------
 
-  private async saveKey(alias: string, value: string, label: string): Promise<boolean> {
-    const trimmed: string = value.trim();
+  private async saveKey(providerId: string, key: string): Promise<boolean> {
+    const trimmed: string = key.trim();
+    const title: string = this.titleFor(providerId);
     if (trimmed.length === 0) {
-      this.setStatus(`${label}：请输入 Key`);
+      this.setStatus(`${title}：请输入 Key`);
       return false;
     }
+    if (providerId === PID_AN && !this.anUrl.trim().startsWith('http')) {
+      this.setStatus('Anthropic：地址需以 http 开头');
+      return false;
+    }
+    if (providerId === PID_OA) {
+      if (!this.oaUrl.trim().startsWith('http')) {
+        this.setStatus('OpenAI 兼容：地址需以 http 开头');
+        return false;
+      }
+
+    }
     try {
-      await AppServices.get().requireModel().secrets.put(alias, trimmed);
-      if (alias === SecretAliases.DEEPSEEK) {
+      const services = AppServices.get();
+      await services.requireModel().secrets.put(this.aliasFor(providerId), trimmed);
+      if (providerId === PID_DS) {
         this.dsConfigured = true;
-      } else if (alias === SecretAliases.ANTHROPIC) {
+      } else if (providerId === PID_AN) {
         this.anConfigured = true;
+        await services.requireModel().repo.putString(SettingsKeys.ANTHROPIC_BASE_URL, this.anUrl.trim());
       } else {
         this.oaConfigured = true;
+        await services.requireModel().repo.putString(SettingsKeys.CUSTOM_BASE_URL, this.oaUrl.trim());
+        await services.requireModel().repo.putString(SettingsKeys.CUSTOM_MODEL_ID, this.oaModel.trim());
       }
-      this.setStatus(`${label} 已加密保存`);
+      this.setStatus(`${title} 已加密保存`);
       return true;
     } catch (e) {
       this.setStatus(`保存失败：${(e as Error).message}`);
@@ -144,145 +257,109 @@ export struct SettingsModelsView {
     }
   }
 
-  private async saveDeepSeek(): Promise<void> {
-    const ok: boolean = await this.saveKey(SecretAliases.DEEPSEEK, this.dsKey, 'DeepSeek');
-    if (ok) {
-      this.dsKey = '';
+  private async test(providerId: string, key: string): Promise<void> {
+    const title: string = this.titleFor(providerId);
+    this.setTesting(providerId, true);
+    this.setTestResult(providerId, '');
+    try {
+      const override: string = key.trim();
+      const result: ConnectionTestResult = await AppServices.get().requireProtocol().testConnection(
+        this.buildProfileFor(providerId), override.length > 0 ? override : undefined);
+      if (result.ok) {
+        this.setTestResult(providerId, `连接成功 · ${result.latencyMs} 毫秒`);
+      } else {
+        const reason: string = result.message.length > 0 ? result.message : '请检查 Key 与网络';
+        this.setTestResult(providerId, `连接失败：${reason}`);
+      }
+    } catch (e) {
+      this.setTestResult(providerId, `连接失败：${(e as Error).message}`);
     }
+    this.setTesting(providerId, false);
+    this.setStatus(`${title} 测试完成`);
   }
 
-  private async saveAnthropic(): Promise<void> {
-    const ok: boolean = await this.saveKey(SecretAliases.ANTHROPIC, this.anKey, 'Anthropic');
-    if (ok) {
-      this.anKey = '';
-    }
-    if (!ok && !this.anConfigured) {
-      return;
-    }
+  private async pull(providerId: string, key: string): Promise<void> {
+    const title: string = this.titleFor(providerId);
+    this.setPulling(providerId, true);
+    this.setPullResult(providerId, '');
     try {
-      const services = AppServices.get();
-      const url: string = this.anUrl.trim();
-      if (url.startsWith('http')) {
-        await services.requireModel().repo.putString(SettingsKeys.ANTHROPIC_BASE_URL, url);
-        const base: ModelProfile | null = this.findProfile(VENDOR_AN);
-        if (base !== null) {
-          services.requireProtocol().catalog.register(this.withBaseUrl(base, url));
+      const override: string = key.trim();
+      const infos = await AppServices.get().requireProtocol().listRemoteModels(
+        this.buildProfileFor(providerId), override.length > 0 ? override : undefined);
+      if (infos.length === 0) {
+        this.setPullResult(providerId, '没有拉到模型，检查 Key 与地址');
+      } else {
+        await AppServices.get().requireProtocol().catalog.applyDiscoveredModels(providerId, infos);
+        await this.reloadRecords();
+        await this.reloadCatalog();
+        this.setPullResult(providerId, `已发现 ${infos.length} 个模型`);
+        this.setStatus(`${title}：${infos.length} 个模型待勾选`);
+      }
+    } catch (e) {
+      this.setPullResult(providerId, `拉取失败：${(e as Error).message}`);
+    }
+    this.setPulling(providerId, false);
+  }
+
+  private async toggleModel(providerId: string, modelId: string, enabled: boolean): Promise<void> {
+    try {
+      const catalog = AppServices.get().requireProtocol().catalog;
+      await catalog.setModelEnabled(providerId, modelId, enabled);
+      await this.reloadRecords();
+      await this.reloadCatalog();
+      if (enabled && this.activeModelId.length === 0) {
+        const found: ModelProfile | null = catalog.get(providerId, modelId);
+        if (found !== null) {
+          await AppServices.get().setActiveProfile(found.providerId, found.modelId);
+          this.activeModelId = found.modelId;
         }
       }
-      this.applyProfiles(services.requireProtocol().catalog.listProfiles());
     } catch (e) {
-      this.setStatus(`保存失败：${(e as Error).message}`);
+      this.setStatus(`切换失败：${(e as Error).message}`);
     }
   }
 
-  private async saveOpenAICompat(): Promise<void> {
-    const url: string = this.oaUrl.trim();
-    const model: string = this.oaModel.trim();
-    if (!url.startsWith('http')) {
-      this.setStatus('地址需以 http 开头');
-      return;
-    }
-    if (model.length === 0) {
-      this.setStatus('请填写模型名');
-      return;
-    }
-    const ok: boolean = await this.saveKey(SecretAliases.OPENAI_COMPAT, this.oaKey, 'OpenAI 兼容');
-    if (ok) {
-      this.oaKey = '';
-    }
-    if (!ok && !this.oaConfigured) {
-      return;
-    }
-    try {
-      const services = AppServices.get();
-      const profile: ModelProfile = {
-        providerId: VENDOR_OA,
-        modelId: model,
-        protocol: 'openai_chat',
-        baseUrl: url,
-        assetKeyAlias: SecretAliases.OPENAI_COMPAT,
-        contextWindow: 128000,
-        cacheMissToHitRatio: 4,
-        cacheIdleTtlSec: 600,
-        supportsServerWebTools: false,
-        supportsThinking: true,
-        supportsJsonSchema: true,
-        label: '自定义兼容接口',
-        builtin: false
-      };
-      services.requireProtocol().catalog.register(profile);
-      await services.requireModel().repo.putString(SettingsKeys.CUSTOM_BASE_URL, url);
-      await services.requireModel().repo.putString(SettingsKeys.CUSTOM_MODEL_ID, model);
-      await services.setActiveProfile(profile.providerId, profile.modelId);
-      this.activeModelId = profile.modelId;
-      this.applyProfiles(services.requireProtocol().catalog.listProfiles());
-    } catch (e) {
-      this.setStatus(`保存失败：${(e as Error).message}`);
+  private setTesting(providerId: string, value: boolean): void {
+    if (providerId === PID_DS) {
+      this.dsTesting = value;
+    } else if (providerId === PID_AN) {
+      this.anTesting = value;
+    } else {
+      this.oaTesting = value;
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // 测试连接
-  // ---------------------------------------------------------------------------
-
-  private async testProfile(profile: ModelProfile | null): Promise<string> {
-    if (profile === null) {
-      return '没有可用配置';
-    }
-    try {
-      const result: ConnectionTestResult =
-        await AppServices.get().requireProtocol().testConnection(profile);
-      if (result.ok) {
-        return `连接成功 · ${result.latencyMs} 毫秒`;
-      }
-      return `连接失败：${result.message.length > 0 ? result.message : '请检查 Key 与网络'}`;
-    } catch (e) {
-      return `连接失败：${(e as Error).message}`;
+  private setPulling(providerId: string, value: boolean): void {
+    if (providerId === PID_DS) {
+      this.dsPulling = value;
+    } else if (providerId === PID_AN) {
+      this.anPulling = value;
+    } else {
+      this.oaPulling = value;
     }
   }
 
-  private async testDeepSeek(): Promise<void> {
-    this.dsTesting = true;
-    this.dsResult = '测试中';
-    const found: ModelProfile | null = this.findProfile(VENDOR_DS);
-    const base: ModelProfile = found !== null ? found : this.defaultProfile();
-    this.dsResult = await this.testProfile(this.withBaseUrl(base, this.dsUrl.trim()));
-    this.dsTesting = false;
+  private setTestResult(providerId: string, value: string): void {
+    if (providerId === PID_DS) {
+      this.dsTestResult = value;
+    } else if (providerId === PID_AN) {
+      this.anTestResult = value;
+    } else {
+      this.oaTestResult = value;
+    }
   }
 
-  private async testAnthropic(): Promise<void> {
-    this.anTesting = true;
-    this.anResult = '测试中';
-    const found: ModelProfile | null = this.findProfile(VENDOR_AN);
-    const base: ModelProfile | null = found !== null ? found : this.findProfileByProtocol('anthropic_messages');
-    this.anResult = await this.testProfile(base === null ? null : this.withBaseUrl(base, this.anUrl.trim()));
-    this.anTesting = false;
+  private setPullResult(providerId: string, value: string): void {
+    if (providerId === PID_DS) {
+      this.dsPullResult = value;
+    } else if (providerId === PID_AN) {
+      this.anPullResult = value;
+    } else {
+      this.oaPullResult = value;
+    }
   }
 
-  private async testOpenAICompat(): Promise<void> {
-    this.oaTesting = true;
-    this.oaResult = '测试中';
-    const model: string = this.oaModel.trim().length > 0 ? this.oaModel.trim() : 'custom-model';
-    const profile: ModelProfile = {
-      providerId: VENDOR_OA,
-      modelId: model,
-      protocol: 'openai_chat',
-      baseUrl: this.oaUrl.trim(),
-      assetKeyAlias: SecretAliases.OPENAI_COMPAT,
-      contextWindow: 128000,
-      cacheMissToHitRatio: 4,
-      cacheIdleTtlSec: 600,
-      supportsServerWebTools: false,
-      supportsThinking: true,
-      supportsJsonSchema: true,
-      label: '自定义兼容接口',
-      builtin: false
-    };
-    this.oaResult = await this.testProfile(profile);
-    this.oaTesting = false;
-  }
-
-  private async selectModel(profile: ModelProfile): Promise<void> {
+  private async pickActive(profile: ModelProfile): Promise<void> {
     try {
       await AppServices.get().setActiveProfile(profile.providerId, profile.modelId);
       this.activeModelId = profile.modelId;
@@ -295,132 +372,6 @@ export struct SettingsModelsView {
   // ---------------------------------------------------------------------------
   // UI
   // ---------------------------------------------------------------------------
-
-  @Builder
-  stateChip(configured: boolean) {
-    Text(configured ? '已加密保存' : '未配置')
-      .fontSize(Layout.fontSmall)
-      .fontColor(configured ? Theme.brand : Theme.textTertiary)
-  }
-
-  @Builder
-  urlInput(url: string, editable: boolean, onChange: (value: string) => void) {
-    if (editable) {
-      TextInput({ text: url, placeholder: '接口地址' })
-        .fontSize(Layout.fontUi)
-        .height(36)
-        .width('100%')
-        .backgroundColor(Theme.bgPage)
-        .borderRadius(Layout.radiusM)
-        .padding({ left: Layout.s3, right: Layout.s3 })
-        .onChange((value: string) => {
-          onChange(value);
-        })
-    } else {
-      TextInput({ text: url, placeholder: '接口地址' })
-        .fontSize(Layout.fontUi)
-        .height(36)
-        .width('100%')
-        .backgroundColor(Theme.bgPage)
-        .borderRadius(Layout.radiusM)
-        .padding({ left: Layout.s3, right: Layout.s3 })
-        .enabled(false)
-    }
-  }
-
-  @Builder
-  keyInput(value: string, placeholder: string, onChange: (value: string) => void) {
-    TextInput({ text: value, placeholder: placeholder })
-      .type(InputType.Password)
-      .fontSize(Layout.fontUi)
-      .height(36)
-      .width('100%')
-      .backgroundColor(Theme.bgPage)
-      .borderRadius(Layout.radiusM)
-      .padding({ left: Layout.s3, right: Layout.s3 })
-      .onChange((text: string) => {
-        onChange(text);
-      })
-  }
-
-  @Builder
-  resultLine(isTesting: boolean, result: string) {
-    if (isTesting || result.length > 0) {
-      Text(isTesting ? '测试中' : result)
-        .fontSize(Layout.fontSmall)
-        .fontColor(result.startsWith('连接成功') ? Theme.success : Theme.textSecondary)
-        .width('100%')
-        .maxLines(2)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-    }
-  }
-
-  @Builder
-  vendorCard(name: string, configured: boolean, url: string, urlEditable: boolean,
-    keyPlaceholder: string, testing: boolean, result: string,
-    onUrlChange: (value: string) => void, onTest: () => void, onSave: () => void) {
-    Column({ space: Layout.s2 }) {
-      Row({ space: Layout.s2 }) {
-        SymbolGlyph(Icons.key)
-          .fontSize(Layout.iconM)
-          .fontColor([configured ? Theme.brand : Theme.iconSecondary])
-        Text(name)
-          .fontSize(Layout.fontUi)
-          .fontWeight(FontWeight.Medium)
-          .fontColor(Theme.textPrimary)
-          .layoutWeight(1)
-        this.stateChip(configured)
-      }
-      .width('100%')
-
-      this.urlInput(url, urlEditable, onUrlChange)
-
-      if (name === 'DeepSeek') {
-        this.keyInput(this.dsKey, keyPlaceholder, (value: string) => {
-          this.dsKey = value;
-        })
-      } else if (name === 'Anthropic') {
-        this.keyInput(this.anKey, keyPlaceholder, (value: string) => {
-          this.anKey = value;
-        })
-      } else {
-        this.keyInput(this.oaKey, keyPlaceholder, (value: string) => {
-          this.oaKey = value;
-        })
-      }
-
-      Row({ space: Layout.s2 }) {
-        Text(testing ? '测试中' : '测试连接')
-          .fontSize(Layout.fontSmall)
-          .fontColor(Theme.textSecondary)
-          .padding({ left: Layout.s3, right: Layout.s3, top: 6, bottom: 6 })
-          .borderRadius(Layout.radiusM)
-          .backgroundColor(Theme.bgPage)
-          .onClick(() => {
-            onTest();
-          })
-        Blank()
-        Text('保存')
-          .fontSize(Layout.fontSmall)
-          .fontWeight(FontWeight.Medium)
-          .fontColor(Theme.textOnBrand)
-          .padding({ left: Layout.s4, right: Layout.s4, top: 6, bottom: 6 })
-          .borderRadius(Layout.radiusM)
-          .backgroundColor(Theme.brand)
-          .onClick(() => {
-            onSave();
-          })
-      }
-      .width('100%')
-
-      this.resultLine(testing, result)
-    }
-    .width('100%')
-    .padding(Layout.s3)
-    .backgroundColor(Theme.bgSurface)
-    .borderRadius(Layout.radiusL)
-    .border({ width: 1, color: Theme.border })
-  }
 
   @Builder
   modelRow(profile: ModelProfile) {
@@ -446,7 +397,7 @@ export struct SettingsModelsView {
     .height(48)
     .padding({ left: Layout.s3, right: Layout.s3 })
     .onClick(() => {
-      this.selectModel(profile);
+      this.pickActive(profile);
     })
   }
 
@@ -458,40 +409,76 @@ export struct SettingsModelsView {
             .fontSize(Layout.fontSmall)
             .fontColor(Theme.textSecondary)
             .width('100%')
+            .maxLines(2)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
         }
 
-        this.vendorCard('DeepSeek', this.dsConfigured, this.dsUrl, false,
-          this.dsConfigured ? '已保存，输入新 Key 可替换' : 'API Key',
-          this.dsTesting, this.dsResult,
-          (value: string) => {
-          }, () => {
-            this.testDeepSeek();
-          }, () => {
-            this.saveDeepSeek();
-          })
+        VendorCard({
+          title: 'DeepSeek',
+          configured: this.dsConfigured,
+          urlEditable: false,
+          url: $dsUrl,
+          testing: this.dsTesting,
+          pulling: this.dsPulling,
+          testResult: this.dsTestResult,
+          pullResult: this.dsPullResult,
+          models: this.recordsFor(PID_DS),
+          onSaveKey: (key: string) => this.saveKey(PID_DS, key),
+          onTest: (key: string) => {
+            this.test(PID_DS, key);
+          },
+          onPull: (key: string) => {
+            this.pull(PID_DS, key);
+          },
+          onToggleModel: (modelId: string, enabled: boolean) => {
+            this.toggleModel(PID_DS, modelId, enabled);
+          }
+        })
 
-        this.vendorCard('Anthropic', this.anConfigured, this.anUrl, true,
-          this.anConfigured ? '已保存，输入新 Key 可替换' : 'API Key',
-          this.anTesting, this.anResult,
-          (value: string) => {
-            this.anUrl = value;
-          }, () => {
-            this.testAnthropic();
-          }, () => {
-            this.saveAnthropic();
-          })
+        VendorCard({
+          title: 'Anthropic',
+          configured: this.anConfigured,
+          urlEditable: true,
+          url: $anUrl,
+          testing: this.anTesting,
+          pulling: this.anPulling,
+          testResult: this.anTestResult,
+          pullResult: this.anPullResult,
+          models: this.recordsFor(PID_AN),
+          onSaveKey: (key: string) => this.saveKey(PID_AN, key),
+          onTest: (key: string) => {
+            this.test(PID_AN, key);
+          },
+          onPull: (key: string) => {
+            this.pull(PID_AN, key);
+          },
+          onToggleModel: (modelId: string, enabled: boolean) => {
+            this.toggleModel(PID_AN, modelId, enabled);
+          }
+        })
 
         Column({ space: Layout.s2 }) {
-          this.vendorCard('OpenAI 兼容', this.oaConfigured, this.oaUrl, true,
-            this.oaConfigured ? '已保存，输入新 Key 可替换' : 'API Key',
-            this.oaTesting, this.oaResult,
-            (value: string) => {
-              this.oaUrl = value;
-            }, () => {
-              this.testOpenAICompat();
-            }, () => {
-              this.saveOpenAICompat();
-            })
+          VendorCard({
+            title: 'OpenAI 兼容',
+            configured: this.oaConfigured,
+            urlEditable: true,
+            url: $oaUrl,
+            testing: this.oaTesting,
+            pulling: this.oaPulling,
+            testResult: this.oaTestResult,
+            pullResult: this.oaPullResult,
+            models: this.recordsFor(PID_OA),
+              onSaveKey: (key: string) => this.saveKey(PID_OA, key),
+            onTest: (key: string) => {
+              this.test(PID_OA, key);
+            },
+            onPull: (key: string) => {
+              this.pull(PID_OA, key);
+            },
+            onToggleModel: (modelId: string, enabled: boolean) => {
+              this.toggleModel(PID_OA, modelId, enabled);
+            }
+          })
           TextInput({ text: this.oaModel, placeholder: '模型名，如 gpt-4o-mini' })
             .fontSize(Layout.fontUi)
             .height(36)
@@ -510,18 +497,29 @@ export struct SettingsModelsView {
           .fontColor(Theme.textSecondary)
           .width('100%')
           .padding({ left: Layout.s1, top: Layout.s2 })
-        Column() {
-          ForEach(this.profiles, (profile: ModelProfile, index: number) => {
-            this.modelRow(profile)
-            if (index < this.profiles.length - 1) {
-              Divider().color(Theme.divider).margin({ left: Layout.s3 })
-            }
-          }, (profile: ModelProfile) => `${profile.providerId}/${profile.modelId}`)
+
+        if (this.profiles.length === 0) {
+          Text('填写密钥并拉取模型后才可对话')
+            .fontSize(Layout.fontUi)
+            .fontColor(Theme.textTertiary)
+            .width('100%')
+            .padding(Layout.s3)
+            .backgroundColor(Theme.bgSurface)
+            .borderRadius(Layout.radiusL)
+        } else {
+          Column() {
+            ForEach(this.profiles, (profile: ModelProfile, index: number) => {
+              this.modelRow(profile)
+              if (index < this.profiles.length - 1) {
+                Divider().color(Theme.divider).margin({ left: Layout.s3 })
+              }
+            }, (profile: ModelProfile) => `${profile.providerId}/${profile.modelId}`)
+          }
+          .width('100%')
+          .backgroundColor(Theme.bgSurface)
+          .borderRadius(Layout.radiusL)
+          .border({ width: 1, color: Theme.border })
         }
-        .width('100%')
-        .backgroundColor(Theme.bgSurface)
-        .borderRadius(Layout.radiusL)
-        .border({ width: 1, color: Theme.border })
       }
       .width('100%')
       .padding({ left: Layout.pagePadding, right: Layout.pagePadding, top: Layout.s3, bottom: Layout.s8 })

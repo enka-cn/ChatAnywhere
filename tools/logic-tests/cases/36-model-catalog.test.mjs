@@ -1,130 +1,258 @@
 /**
- * 内置模型目录（packages/core_protocol/ModelCatalog.ets）
+ * 真实模型目录（packages/core_protocol/ModelCatalog.ets，v3.2 去占位模型）
  *
- * 覆盖：Blueprint §3.2 的 cacheMissToHitRatio（deepseek-flash=50 / v4-pro=30 / 其它≈4）、
- * contextWindow、协议种类、中文 label、密钥别名（不得明文 Key）、注册/覆盖/内置判定。
- * 这些字段直接驱动压缩引擎的经济性决策与设置页展示。
+ * v3.2 契约：
+ * - 目录启动为空（无任何硬编码模型 id），只有 RDB 注册表里 enabled=true 的模型才出现；
+ * - 三厂商预设只含 providerId/协议/默认地址/缓存经济性/能力标志；
+ * - `buildProfile` 组合预设与模型 id；`applyDiscoveredModels` 落库并保留已勾选状态；
+ * - `hasModels()/defaultProfile()` 在无模型时分别返回 false/null（UI 据此引导去设置）。
  */
-import { test, assert, skip, summarize } from './_harness.mjs';
+import { test, assert, testAsync, skip, summarize } from './_harness.mjs';
 import { tryImport, missingReason } from './_paths.mjs';
 
 const P = 'packages/core_protocol/src/main/ets/ModelCatalog.ts';
 const m = await tryImport(P);
 
+function makeDeps(initial = {}) {
+  const settings = new Map(Object.entries(initial.settings || {}));
+  let records = (initial.records || []).map((r) => ({ ...r }));
+  const models = {
+    async saveDiscoveredModels(providerId, next) {
+      records = records.filter((r) => r.providerId !== providerId).concat(next.map((r) => ({ ...r })));
+    },
+    async loadModels() {
+      return records.map((r) => ({ ...r }));
+    },
+    async setModelEnabled(providerId, modelId, enabled) {
+      records = records.map((r) => (r.providerId === providerId && r.modelId === modelId ? { ...r, enabled } : r));
+    },
+    async removeProviderModels(providerId) {
+      records = records.filter((r) => r.providerId !== providerId);
+    }
+  };
+  const settingsApi = {
+    async getString(key, defaultValue) { return settings.has(key) ? settings.get(key) : defaultValue; },
+    async putString(key, value) { settings.set(key, value); },
+    async getNumber(key, defaultValue) { return defaultValue; },
+    async putNumber() { },
+    async getBool(key, defaultValue) { return defaultValue; },
+    async putBool() { },
+    async remove() { }
+  };
+  const secrets = {
+    async has() { return false; },
+    async get() { return null; },
+    async put() { },
+    async listAliases() { return []; },
+    async remove() { }
+  };
+  return { deps: { secrets, settings: settingsApi, models }, inspect: () => records, settingsMap: settings };
+}
+const record = (providerId, modelId, enabled, displayName = '') => ({
+  providerId, modelId, displayName, metaJson: '', enabled, discoveredAt: 1
+});
+
 if (!m || !m.ModelCatalog) {
-  skip('模型目录（全部用例）', missingReason(P));
+  skip('真实模型目录（全部用例）', missingReason(P));
   summarize();
 } else {
-  const fresh = () => new m.ModelCatalog();
+  const { ModelCatalog } = m;
+  const fresh = (initial = {}) => new ModelCatalog(makeDeps(initial).deps);
 
-  test('内置目录包含 DeepSeek / Anthropic / OpenAI 兼容共 5 个模型', () => {
+  await testAsync('默认目录为空：无任何硬编码占位模型，hasModels=false / defaultProfile=null', async () => {
     const catalog = fresh();
-    const profiles = catalog.listProfiles();
-    assert.equal(profiles.length, 5);
-    assert.ok(profiles.some((p) => p.modelId === 'deepseek-flash'));
-    assert.ok(profiles.some((p) => p.modelId === 'deepseek-v4-pro'));
-    assert.ok(profiles.some((p) => p.providerId === 'anthropic'));
-    assert.ok(profiles.some((p) => p.protocol === 'openai_chat'));
+    await catalog.init();
+    assert.deepEqual(catalog.listProfiles(), []);
+    assert.equal(catalog.hasModels(), false);
+    assert.equal(catalog.defaultProfile(), null);
+    assert.equal(catalog.get('deepseek', 'any-model'), null);
+    assert.equal(catalog.findByModelId('any-model'), null);
   });
 
-  test('deepseek-flash：缓存价差 50、窗口 1M、Responses 协议、支持服务端联网', () => {
-    const p = fresh().get('deepseek', 'deepseek-flash');
-    assert.ok(p);
-    assert.equal(p.cacheMissToHitRatio, 50);
-    assert.equal(p.contextWindow, 1000000);
-    assert.equal(p.protocol, 'deepseek_responses');
-    assert.equal(p.supportsServerWebTools, true);
-    assert.equal(p.supportsThinking, true);
-    assert.equal(p.baseUrl, 'https://api.deepseek.com');
-  });
-
-  test('deepseek-v4-pro：缓存价差 30', () => {
-    assert.equal(fresh().get('deepseek', 'deepseek-v4-pro').cacheMissToHitRatio, 30);
-  });
-
-  test('Anthropic 模型：缓存价差 4、不支持服务端原厂联网工具', () => {
-    const p = fresh().get('anthropic', 'claude-sonnet-4-5');
-    assert.ok(p);
-    assert.equal(p.cacheMissToHitRatio, 4);
-    assert.equal(p.protocol, 'anthropic_messages');
-    assert.equal(p.supportsServerWebTools, false);
-    assert.ok(p.contextWindow > 0);
-    assert.ok(p.cacheIdleTtlSec > 0);
-  });
-
-  test('OpenAI 兼容端点：可自定义 baseUrl，非内置厂商', () => {
+  test('三厂商预设：providerId/协议/地址/缓存经济性/能力标志（不含模型 id）', () => {
     const catalog = fresh();
-    const p = catalog.get('openai_compat', 'gpt-4.1-mini');
-    assert.ok(p);
-    assert.equal(p.protocol, 'openai_chat');
-    assert.equal(p.builtin, false);
-    assert.equal(catalog.isBuiltin('openai_compat'), false);
-  });
-
-  test('所有 profile 的 label 为直白中文、只存密钥别名不存明文 Key', () => {
-    for (const p of fresh().listProfiles()) {
-      assert.ok(p.label.length > 0, `${p.modelId} 缺中文 label`);
-      assert.ok(/[\u4e00-\u9fff]/.test(p.label), `${p.modelId} 的 label 应为中文：${p.label}`);
-      assert.ok(p.assetKeyAlias.length > 0);
-      assert.ok(!p.assetKeyAlias.toLowerCase().startsWith('sk-'), '不得在 manifest 里存明文 Key');
-      assert.ok(p.contextWindow > 0);
-      assert.ok(p.cacheMissToHitRatio > 0);
+    for (const [providerId, protocol, label] of [
+      ['deepseek', 'deepseek_responses', '深度求索'],
+      ['anthropic', 'anthropic_messages', '克劳德'],
+      ['openai_compat', 'openai_chat', '自定义兼容接口']
+    ]) {
+      const meta = catalog.providerMeta(providerId);
+      assert.ok(meta, `${providerId} 预设缺失`);
+      assert.equal(meta.providerId, providerId);
+      assert.equal(meta.protocol, protocol);
+      assert.equal(meta.label, label);
+      assert.ok(meta.defaultBaseUrl.startsWith('https://'));
+      assert.ok(meta.contextWindow > 0);
+      assert.ok(meta.cacheMissToHitRatio > 0);
+      assert.ok(meta.assetKeyAlias.length > 0 && !meta.assetKeyAlias.startsWith('sk-'));
     }
+    assert.equal(catalog.providerMeta('deepseek').cacheMissToHitRatio, 50);
+    assert.equal(catalog.providerMeta('deepseek').contextWindow, 1000000);
+    assert.equal(catalog.providerMeta('anthropic').contextWindow, 200000);
+    assert.equal(catalog.providerMeta('unknown_vendor'), null);
   });
 
-  test('get：精确命中，未知组合返回 null', () => {
-    const catalog = fresh();
-    assert.equal(catalog.get('deepseek', 'deepseek-flash').modelId, 'deepseek-flash');
-    assert.equal(catalog.get('deepseek', '不存在'), null);
-    assert.equal(catalog.get('未知厂商', 'deepseek-flash'), null);
-  });
-
-  test('findByModelId / findByProtocol', () => {
-    const catalog = fresh();
-    assert.equal(catalog.findByModelId('claude-opus-4-5').providerId, 'anthropic');
-    assert.equal(catalog.findByModelId('不存在'), null);
-    assert.equal(catalog.findByProtocol('deepseek_responses').providerId, 'deepseek');
-    assert.equal(catalog.findByProtocol('anthropic_messages').providerId, 'anthropic');
-  });
-
-  test('defaultProfile：恒为非空，默认 deepseek-flash', () => {
-    const catalog = fresh();
-    const p = catalog.defaultProfile();
-    assert.ok(p);
-    assert.equal(p.providerId, 'deepseek');
-    assert.equal(p.modelId, 'deepseek-flash');
-  });
-
-  test('register：同 provider+model 覆盖不新增；新 provider 追加', () => {
-    const catalog = fresh();
-    const before = catalog.listProfiles().length;
-    const flash = catalog.get('deepseek', 'deepseek-flash');
-    const overridden = { ...flash, baseUrl: 'https://proxy.example.com', label: '自定义中转' };
-    catalog.register(overridden);
-    assert.equal(catalog.listProfiles().length, before);
-    assert.equal(catalog.get('deepseek', 'deepseek-flash').baseUrl, 'https://proxy.example.com');
-
-    catalog.register({ ...flash, providerId: 'my_vendor', modelId: 'my-model', builtin: false });
-    assert.equal(catalog.listProfiles().length, before + 1);
-    assert.equal(catalog.get('my_vendor', 'my-model').modelId, 'my-model');
-  });
-
-  test('isBuiltin / builtinCount：内置厂商与内置模型计数', () => {
+  test('isBuiltin：三类预设为内置，未知/空为 false', () => {
     const catalog = fresh();
     assert.equal(catalog.isBuiltin('deepseek'), true);
     assert.equal(catalog.isBuiltin('anthropic'), true);
-    assert.equal(catalog.isBuiltin('openai_compat'), false);
-    assert.equal(catalog.builtinCount(), 4); // deepseek 2 + anthropic 2
+    assert.equal(catalog.isBuiltin('openai_compat'), true);
+    assert.equal(catalog.isBuiltin('my_vendor'), false);
+    assert.equal(catalog.isBuiltin(''), false);
   });
 
-  test('resetToBuiltin：清掉自定义注册后恢复默认目录', () => {
+  test('providerMeta 返回副本：调用方修改不污染预设', () => {
     const catalog = fresh();
-    const flash = catalog.get('deepseek', 'deepseek-flash');
-    catalog.register({ ...flash, providerId: 'tmp_vendor', modelId: 'tmp-model' });
-    assert.equal(catalog.listProfiles().length, 6);
-    catalog.resetToBuiltin();
-    assert.equal(catalog.listProfiles().length, 5);
-    assert.equal(catalog.get('tmp_vendor', 'tmp-model'), null);
+    const meta = catalog.providerMeta('deepseek');
+    meta.label = '被改坏';
+    meta.contextWindow = 1;
+    assert.equal(catalog.providerMeta('deepseek').label, '深度求索');
+    assert.equal(catalog.providerMeta('deepseek').contextWindow, 1000000);
+  });
+
+  test('buildProfile：预设 + 模型 id 组合全部字段；空 modelId 为探测用 profile；未知厂商 null', () => {
+    const catalog = fresh();
+    const p = catalog.buildProfile('deepseek', 'model-x');
+    assert.equal(p.providerId, 'deepseek');
+    assert.equal(p.modelId, 'model-x');
+    assert.equal(p.protocol, 'deepseek_responses');
+    assert.equal(p.baseUrl, 'https://api.deepseek.com');
+    assert.equal(p.contextWindow, 1000000);
+    assert.equal(p.cacheMissToHitRatio, 50);
+    assert.equal(p.label, '深度求索 · model-x');
+    assert.equal(p.builtin, true);
+    assert.equal(p.supportsThinking, true);
+
+    const probe = catalog.buildProfile('deepseek', '');
+    assert.equal(probe.modelId, '');
+    assert.equal(probe.label, '深度求索');
+
+    const custom = catalog.buildProfile('openai_compat', 'm', 'https://proxy.example.com/v1');
+    assert.equal(custom.baseUrl, 'https://proxy.example.com/v1');
+
+    assert.equal(catalog.buildProfile('unknown', 'm'), null);
+    assert.equal(catalog.buildProfile('', 'm'), null);
+  });
+
+  test('buildProfile：OpenAI 兼容端点的思考能力按模型名保守推断', () => {
+    const catalog = fresh();
+    const think = (id) => catalog.buildProfile('openai_compat', id).supportsThinking;
+    assert.equal(think('gpt-5-mini'), true);
+    assert.equal(think('deepseek-r1'), true);
+    assert.equal(think('o3-mini'), true);
+    assert.equal(think('qwq-32b'), true);
+    assert.equal(think('gpt-4o'), false);
+    assert.equal(think(''), false);
+  });
+
+  testAsync('init：从 fake 注册表装载 enabled 模型（disabled 不出现），defaultProfile 按预设顺序', async () => {
+    const catalog = fresh({
+      records: [
+        record('deepseek', 'flash-x', true, '极速X'),
+        record('deepseek', 'pro-y', false),
+        record('anthropic', 'claude-z', true),
+        record('unknown_vendor', 'ghost-model', true)
+      ]
+    });
+    await catalog.init();
+    const profiles = catalog.listProfiles();
+    assert.equal(profiles.length, 2, JSON.stringify(profiles.map((p) => p.modelId)));
+    assert.ok(profiles.some((p) => p.modelId === 'flash-x' && p.label === '极速X'));
+    assert.ok(profiles.some((p) => p.modelId === 'claude-z'));
+    assert.equal(catalog.hasModels(), true);
+    assert.equal(catalog.defaultProfile().modelId, 'flash-x');
+    assert.equal(catalog.get('deepseek', 'flash-x').label, '极速X');
+    assert.equal(catalog.get('deepseek', 'pro-y'), null);
+    assert.equal(catalog.findByModelId('claude-z').providerId, 'anthropic');
+  });
+
+  testAsync('applyDiscoveredModels：落库去重、新模型默认未勾选、保留已有勾选状态', async () => {
+    const harness = makeDeps();
+    const catalog = new ModelCatalog(harness.deps);
+    await catalog.init();
+
+    await catalog.applyDiscoveredModels('deepseek', [
+      { modelId: 'm1', displayName: '模型一', metaJson: '' },
+      { modelId: 'm2', displayName: '', metaJson: '' },
+      { modelId: 'm1', displayName: '重复', metaJson: '' }
+    ]);
+    assert.equal(harness.inspect().length, 2, '同 modelId 应去重');
+    assert.ok(harness.inspect().every((r) => r.enabled === false), '新发现模型默认未勾选');
+    assert.deepEqual(catalog.listProfiles(), [], '未勾选模型不进入目录');
+
+    await catalog.setModelEnabled('deepseek', 'm1', true);
+    assert.equal(catalog.listProfiles().length, 1);
+    assert.equal(catalog.defaultProfile().modelId, 'm1');
+    assert.equal(catalog.defaultProfile().label, '模型一');
+
+    // 再次探测：m1 保持勾选，m2 仍未勾选，新增 m3 默认未勾选
+    await catalog.applyDiscoveredModels('deepseek', [
+      { modelId: 'm1', displayName: '模型一', metaJson: '' },
+      { modelId: 'm2', displayName: '', metaJson: '' },
+      { modelId: 'm3', displayName: '', metaJson: '' }
+    ]);
+    const enabledIds = catalog.listProfiles().map((p) => p.modelId);
+    assert.deepEqual(enabledIds, ['m1']);
+    const stored = harness.inspect().filter((r) => r.providerId === 'deepseek');
+    assert.equal(stored.length, 3);
+    assert.equal(stored.find((r) => r.modelId === 'm1').enabled, true);
+    assert.equal(stored.find((r) => r.modelId === 'm3').enabled, false);
+
+    // 未知厂商直接忽略
+    await catalog.applyDiscoveredModels('unknown', [{ modelId: 'x' }]);
+    assert.equal(catalog.listProfiles().length, 1);
+
+    // 取消勾选后目录移除
+    await catalog.setModelEnabled('deepseek', 'm1', false);
+    assert.deepEqual(catalog.listProfiles(), []);
+    assert.equal(catalog.defaultProfile(), null);
+  });
+
+  testAsync('defaultProfile：无启用模型返回 null；仅有非首预设厂商时回退该模型', async () => {
+    const onlyAnthropic = fresh({ records: [record('anthropic', 'claude-z', true)] });
+    await onlyAnthropic.init();
+    assert.equal(onlyAnthropic.defaultProfile().providerId, 'anthropic');
+
+    const none = fresh();
+    await none.init();
+    assert.equal(none.defaultProfile(), null);
+  });
+
+  testAsync('register：运行时临时注册进入目录（不落库），同键覆盖', async () => {
+    const harness = makeDeps();
+    const catalog = new ModelCatalog(harness.deps);
+    await catalog.init();
+    const profile = catalog.buildProfile('deepseek', 'runtime-model');
+    catalog.register(profile);
+    assert.equal(catalog.listProfiles().length, 1);
+    assert.equal(catalog.get('deepseek', 'runtime-model').modelId, 'runtime-model');
+    assert.equal(harness.inspect().length, 0, 'register 不应落库');
+
+    const overridden = { ...profile, label: '临时覆盖名' };
+    catalog.register(overridden);
+    assert.equal(catalog.listProfiles().length, 1);
+    assert.equal(catalog.get('deepseek', 'runtime-model').label, '临时覆盖名');
+  });
+
+  testAsync('自定义端点地址：init 从设置读取 custom/anthropic baseUrl，re-init 跟随设置变化', async () => {
+    const harness = makeDeps({
+      settings: {
+        'provider.custom.baseUrl': 'https://proxy.example.com/v1',
+        'provider.anthropic.baseUrl': 'https://claude-proxy.example.com'
+      },
+      records: [record('anthropic', 'claude-z', true)]
+    });
+    const catalog = new ModelCatalog(harness.deps);
+    await catalog.init();
+    assert.equal(catalog.buildProfile('openai_compat', 'm').baseUrl, 'https://proxy.example.com/v1');
+    assert.equal(catalog.buildProfile('anthropic', 'claude-z').baseUrl, 'https://claude-proxy.example.com');
+    assert.equal(catalog.providerMeta('anthropic').defaultBaseUrl, 'https://claude-proxy.example.com');
+
+    harness.settingsMap.set('provider.custom.baseUrl', 'https://proxy2.example.com/v1');
+    await catalog.init();
+    assert.equal(catalog.buildProfile('openai_compat', 'm').baseUrl, 'https://proxy2.example.com/v1');
+    // 已装载的 profile 也应跟随新地址
+    assert.equal(catalog.listProfiles()[0].baseUrl, 'https://claude-proxy.example.com');
   });
 
   summarize();

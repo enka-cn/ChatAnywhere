@@ -21,6 +21,7 @@ import {
   SkillRecord,
   SkillSnapshot
 } from '../interfaces/RepositoryApi';
+import { ModelRegistryApi, ProviderModelRecord } from '../interfaces/ModelRegistryApi';
 import {
   buildFtsQuery,
   likePattern,
@@ -100,6 +101,20 @@ const SQL_CREATE_SKILL_SNAPSHOTS: string = `CREATE TABLE IF NOT EXISTS skill_sna
 const SQL_CREATE_SKILL_SNAPSHOT_INDEX: string =
   `CREATE INDEX IF NOT EXISTS idx_skill_snapshots_skill ON skill_snapshots (skill_id, saved_at)`;
 
+/** 真实模型注册表（v3.2）：模型只来自用户对真实端点的「测试连接/拉取模型」，不内置占位模型。 */
+const SQL_CREATE_PROVIDER_MODELS: string = `CREATE TABLE IF NOT EXISTS provider_models (
+  provider_id TEXT NOT NULL,
+  model_id TEXT NOT NULL,
+  display_name TEXT NOT NULL DEFAULT '',
+  meta_json TEXT NOT NULL DEFAULT '',
+  enabled INTEGER NOT NULL DEFAULT 0,
+  discovered_at INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (provider_id, model_id)
+)`;
+
+const SQL_CREATE_PROVIDER_MODELS_INDEX: string =
+  `CREATE INDEX IF NOT EXISTS idx_provider_models_provider ON provider_models (provider_id)`;
+
 /** FTS5 首选项：trigram 支持任意位置子串匹配（含中文短词以外场景）。 */
 const SQL_CREATE_FTS_TRIGRAM: string = `CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts USING fts5(
   node_id UNINDEXED,
@@ -168,12 +183,15 @@ const COL_SKILL: string = 'skill_id, version, enabled, manifest_json, updated_at
 
 const COL_SNAPSHOT: string = 'skill_id, version, manifest_json, saved_at';
 
+const COL_PROVIDER_MODEL: string =
+  'provider_id, model_id, display_name, meta_json, enabled, discovered_at';
+
 /** 构造空的 ValuesBucket（ArkTS 禁止 Record 对象字面量）。 */
 function newValuesBucket(): relationalStore.ValuesBucket {
   return JSON.parse('{}') as relationalStore.ValuesBucket;
 }
 
-export class RdbRepository implements RdbRepositoryApi, RootBranchStore, SessionArchiveStore {
+export class RdbRepository implements RdbRepositoryApi, ModelRegistryApi, RootBranchStore, SessionArchiveStore {
   private readonly context: Context;
   private readonly dbName: string;
   private store: relationalStore.RdbStore | null = null;
@@ -259,6 +277,14 @@ export class RdbRepository implements RdbRepositoryApi, RootBranchStore, Session
     } catch (e) {
       this.lastError = `初始化数据表失败：${(e as Error).message}`;
       throw new Error(this.lastError);
+    }
+    // 模型注册表建表失败只降级（模型列表暂时为空），绝不阻断 App 启动。
+    try {
+      await store.executeSql(SQL_CREATE_PROVIDER_MODELS);
+      await store.executeSql(SQL_CREATE_PROVIDER_MODELS_INDEX);
+    } catch (e) {
+      this.lastError = `模型清单表初始化失败，模型列表将暂时为空：${(e as Error).message}`;
+      hilog.error(DOMAIN, TAG, 'create provider_models failed: %{public}s', (e as Error).message);
     }
     await this.initFts();
   }
@@ -377,6 +403,18 @@ export class RdbRepository implements RdbRepositoryApi, RootBranchStore, Session
       savedAt: this.readNumber(rs, 'saved_at', 0)
     };
     return snapshot;
+  }
+
+  private providerModelFromRow(rs: relationalStore.ResultSet): ProviderModelRecord {
+    const record: ProviderModelRecord = {
+      providerId: this.readString(rs, 'provider_id'),
+      modelId: this.readString(rs, 'model_id'),
+      displayName: this.readString(rs, 'display_name'),
+      metaJson: this.readString(rs, 'meta_json'),
+      enabled: this.readNumber(rs, 'enabled', 0) === 1,
+      discoveredAt: this.readNumber(rs, 'discovered_at', 0)
+    };
+    return record;
   }
 
   // ---------------------------------------------------------------------------
@@ -1135,6 +1173,169 @@ export class RdbRepository implements RdbRepositoryApi, RootBranchStore, Session
       await store.executeSql('DELETE FROM skill_snapshots WHERE skill_id = ?', [skillId]);
     } catch (e) {
       this.lastError = `清理技能旧版本失败：${(e as Error).message}`;
+      throw new Error(this.lastError);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // 真实模型注册表（provider_models，v3.2）
+  // ---------------------------------------------------------------------------
+
+  /**
+   * 用一次真实探测结果整体替换某厂商的模型清单。
+   * 事务内：先读旧 enabled 状态 → 全量重写本厂商行（同 provider+model 保留旧 enabled，
+   * 新模型用传入 enabled）→ 旧清单里已消失的模型随之被删除。
+   * 空 providerId 视为调用错误；写入失败抛中文 Error。
+   */
+  async saveDiscoveredModels(providerId: string, records: ProviderModelRecord[]): Promise<void> {
+    if (providerId === undefined || providerId === null || providerId.trim().length === 0) {
+      throw new Error('保存模型清单失败：厂商标识为空');
+    }
+    const store = this.requireStore();
+    const safeRecords: ProviderModelRecord[] = [];
+    const seen: Set<string> = new Set<string>();
+    if (records !== undefined && records !== null) {
+      for (const record of records) {
+        if (record === null || record === undefined) {
+          continue;
+        }
+        const rawModelId = record.modelId === undefined || record.modelId === null ? '' : record.modelId;
+        const modelId = rawModelId.trim();
+        if (modelId.length === 0) {
+          hilog.warn(DOMAIN, TAG, 'skip discovered model with empty id');
+          continue;
+        }
+        if (seen.has(modelId)) {
+          continue;
+        }
+        seen.add(modelId);
+        const rawDisplayName = record.displayName === undefined || record.displayName === null
+          ? '' : record.displayName;
+        const rawMetaJson = record.metaJson === undefined || record.metaJson === null
+          ? '' : record.metaJson;
+        const discoveredAt = record.discoveredAt > 0 ? record.discoveredAt : Date.now();
+        const normalized: ProviderModelRecord = {
+          providerId: providerId,
+          modelId: modelId,
+          displayName: rawDisplayName.trim().length > 0 ? rawDisplayName.trim() : modelId,
+          metaJson: rawMetaJson,
+          enabled: record.enabled === true,
+          discoveredAt: discoveredAt
+        };
+        safeRecords.push(normalized);
+      }
+    }
+    const tx: relationalStore.Transaction = await store.createTransaction();
+    try {
+      const oldEnabled: Map<string, boolean> = new Map<string, boolean>();
+      const rs = await tx.querySql(
+        'SELECT model_id, enabled FROM provider_models WHERE provider_id = ?',
+        [providerId]
+      );
+      try {
+        while (rs.goToNextRow()) {
+          oldEnabled.set(this.readString(rs, 'model_id'), this.readNumber(rs, 'enabled', 0) === 1);
+        }
+      } finally {
+        rs.close();
+      }
+      await tx.execute('DELETE FROM provider_models WHERE provider_id = ?', [providerId]);
+      for (const record of safeRecords) {
+        const previous = oldEnabled.get(record.modelId);
+        const enabled = previous === undefined ? record.enabled : previous;
+        await tx.execute(
+          `INSERT INTO provider_models (provider_id, model_id, display_name, meta_json, enabled, discovered_at)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [
+            providerId, record.modelId, record.displayName, record.metaJson,
+            enabled ? 1 : 0, record.discoveredAt
+          ]
+        );
+      }
+      await tx.commit();
+    } catch (e) {
+      try {
+        await tx.rollback();
+      } catch (e2) {
+        // 忽略回滚失败：原始错误更重要
+      }
+      this.lastError = `保存模型清单失败：${(e as Error).message}`;
+      hilog.error(DOMAIN, TAG, 'saveDiscoveredModels failed: %{public}s', (e as Error).message);
+      throw new Error(this.lastError);
+    }
+  }
+
+  /** 全量读取模型清单（含未启用），按厂商 + 模型 id 排序；读失败返回空列表并记 lastError。 */
+  async loadModels(): Promise<ProviderModelRecord[]> {
+    const store = this.requireStore();
+    const out: ProviderModelRecord[] = [];
+    let rs: relationalStore.ResultSet | null = null;
+    try {
+      rs = await store.querySql(
+        `SELECT ${COL_PROVIDER_MODEL} FROM provider_models ORDER BY provider_id ASC, model_id ASC`
+      );
+      while (rs.goToNextRow()) {
+        out.push(this.providerModelFromRow(rs));
+      }
+    } catch (e) {
+      this.lastError = `读取模型清单失败：${(e as Error).message}`;
+      hilog.error(DOMAIN, TAG, 'loadModels failed: %{public}s', (e as Error).message);
+      return [];
+    } finally {
+      if (rs !== null) {
+        rs.close();
+      }
+    }
+    return out;
+  }
+
+  /** 勾选/取消勾选某个模型；模型不存在时抛中文 Error（提示重新拉取清单）。 */
+  async setModelEnabled(providerId: string, modelId: string, enabled: boolean): Promise<void> {
+    if (providerId === undefined || providerId === null || providerId.trim().length === 0 ||
+      modelId === undefined || modelId === null || modelId.trim().length === 0) {
+      throw new Error('切换模型失败：缺少厂商或模型标识');
+    }
+    const store = this.requireStore();
+    let exists: boolean = false;
+    let rs: relationalStore.ResultSet | null = null;
+    try {
+      rs = await store.querySql(
+        'SELECT model_id FROM provider_models WHERE provider_id = ? AND model_id = ?',
+        [providerId, modelId]
+      );
+      exists = rs.goToNextRow();
+    } catch (e) {
+      this.lastError = `切换模型失败：${(e as Error).message}`;
+      throw new Error(this.lastError);
+    } finally {
+      if (rs !== null) {
+        rs.close();
+      }
+    }
+    if (!exists) {
+      throw new Error('切换模型失败：没有找到这个模型，请先在设置页重新拉取模型清单');
+    }
+    try {
+      await store.executeSql(
+        'UPDATE provider_models SET enabled = ? WHERE provider_id = ? AND model_id = ?',
+        [enabled ? 1 : 0, providerId, modelId]
+      );
+    } catch (e) {
+      this.lastError = `切换模型失败：${(e as Error).message}`;
+      throw new Error(this.lastError);
+    }
+  }
+
+  /** 清空某厂商的全部模型（切换端点 / 重置时用）。 */
+  async removeProviderModels(providerId: string): Promise<void> {
+    if (providerId === undefined || providerId === null || providerId.trim().length === 0) {
+      throw new Error('清空模型清单失败：厂商标识为空');
+    }
+    const store = this.requireStore();
+    try {
+      await store.executeSql('DELETE FROM provider_models WHERE provider_id = ?', [providerId]);
+    } catch (e) {
+      this.lastError = `清空模型清单失败：${(e as Error).message}`;
       throw new Error(this.lastError);
     }
   }

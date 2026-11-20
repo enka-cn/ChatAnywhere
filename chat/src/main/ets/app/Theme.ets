@@ -178,6 +178,13 @@ export class Icons {
   static readonly wifi: Resource = $r('sys.symbol.wifi');
   static readonly key: Resource = $r('sys.symbol.key');
 
+  // 角色头像预设（v3.2）
+  static readonly plan: Resource = $r('sys.symbol.list_bullet');
+  static readonly code: Resource = $r('sys.symbol.code_square');
+  static readonly fileText: Resource = $r('sys.symbol.doc_text');
+  static readonly translate: Resource = $r('sys.symbol.translate');
+  static readonly shield: Resource = $r('sys.symbol.lock_shield');
+
   static readonly drawer: Resource = $r('sys.symbol.open_sidebar');
   static readonly drawerClose: Resource = $r('sys.symbol.close_sidebar');
   static readonly skillCreator: Resource = $r('sys.symbol.doc_plaintext_and_pencil');

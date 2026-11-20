@@ -151,6 +151,38 @@
     {
       "name": "toggle_off",
       "value": "#2A2F3A"
+    },
+    {
+      "name": "avatar_bg_blue",
+      "value": "#1C2740"
+    },
+    {
+      "name": "avatar_bg_violet",
+      "value": "#251E3A"
+    },
+    {
+      "name": "avatar_bg_teal",
+      "value": "#17332E"
+    },
+    {
+      "name": "avatar_bg_amber",
+      "value": "#3A2E1B"
+    },
+    {
+      "name": "avatar_bg_rose",
+      "value": "#3A1F2A"
+    },
+    {
+      "name": "avatar_bg_green",
+      "value": "#1B3323"
+    },
+    {
+      "name": "avatar_bg_slate",
+      "value": "#242A33"
+    },
+    {
+      "name": "avatar_bg_cyan",
+      "value": "#183037"
     }
   ]
 }

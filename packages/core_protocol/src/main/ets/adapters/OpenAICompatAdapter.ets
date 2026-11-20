@@ -18,6 +18,7 @@ import {
 import { ProviderAdapter } from '../interfaces/ProviderAdapter';
 import { OpenAiSseState, parseOpenAiSse } from './OpenAiSse';
 import { bodySnippet, joinUrl } from '../util/UrlUtil';
+import { modelsUrl } from '../util/RemoteModels';
 import { asRecord, getStr, newObjectRecord, parseRecord } from '../util/JsonLite';
 
 const STREAM_TIMEOUT_MS: number = 1800000;
@@ -138,12 +139,15 @@ export class OpenAICompatAdapter implements ProviderAdapter {
     return spec;
   }
 
-  /** 远端模型列表：`GET {baseUrl}/models`。 */
+  /**
+   * 远端模型列表：`GET {baseUrl}/models`。
+   * v3.2 起统一走 `util/RemoteModels.modelsUrl`（baseUrl 已含 `/v1` 时不重复拼接）。
+   */
   buildModelsRequest(profile: ModelProfile): HttpRequestSpec {
     const headers: Map<string, string> = new Map<string, string>();
     headers.set('accept', 'application/json');
     const spec: HttpRequestSpec = {
-      url: joinUrl(profile.baseUrl, '/models'),
+      url: modelsUrl(profile.protocol, profile.baseUrl),
       method: 'GET',
       headers: headers,
       bodyJson: '',

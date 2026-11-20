@@ -2,19 +2,20 @@
  * 协议层工厂（唯一装配点）。
  *
  * 职责：
- * - 组装模型目录（内置 + 设置页里的自定义端点）；
+ * - 组装**真实模型目录**（ModelCatalog：厂商预设 + RDB 注册表的已启用模型，无占位模型）；
  * - 组装 3 个厂商 Adapter 与 rcp 流式客户端；
  * - `send()` 打通「取密钥 → 组装请求 → rcp 流式 → SSE 解析 → 厂商事件 → 统一事件」全链路；
  * - `cancel()` 生效、错误中文化并带 retriable 标记；
- * - `testConnection()` / `listRemoteModels()` / `synthesizeTitle()`。
+ * - `testConnection()`（支持输入框里尚未保存的新 Key）/ `listRemoteModels()`（真实 /models 探测）/
+ *   `synthesizeTitle()`。
  *
  * 密钥不落在 Adapter 里：Adapter 只产 headers 骨架，由本层注入
  * （DeepSeek/OpenAI 用 `Authorization: Bearer`，Anthropic 用 `x-api-key`），
  * 这样 Adapter 保持纯逻辑、可被 QA 单测。
  */
-import { ConversationNode, SettingsKeys } from '@app/core_model';
+import { ConversationNode } from '@app/core_model';
 import {
-  ConnectionTestResult, HttpRequestSpec, ModelProfile, ProtocolKind, RequestOptions, StreamEvent
+  ConnectionTestResult, HttpRequestSpec, ModelProfile, ProtocolKind, RemoteModelInfo, RequestOptions, StreamEvent
 } from './interfaces/ProtocolTypes';
 import { ProviderAdapter } from './interfaces/ProviderAdapter';
 import {
@@ -29,7 +30,12 @@ import { SseParser } from './SseParser';
 import { SseFrame } from './interfaces/ProviderAdapter';
 import { buildLocalTitle } from './util/TitleUtil';
 import { mapHttpStatus } from './util/ErrorText';
-import { joinUrl } from './util/UrlUtil';
+import { modelIdsOf, modelsUrl, parseModelsResponse } from './util/RemoteModels';
+
+/** Anthropic 探测 /models 所需的版本头（官方稳定值）。 */
+const ANTHROPIC_VERSION: string = '2023-06-01';
+/** /models 探测超时。 */
+const MODELS_PROBE_TIMEOUT_MS: number = 20000;
 
 /** 可取消的一次流式运行（StreamHandle 实现）。 */
 export class ProtocolStreamRun implements StreamHandle {
@@ -63,19 +69,16 @@ export class ProtocolStreamRun implements StreamHandle {
 export class ProtocolLayerImpl implements ProtocolLayer {
   readonly catalog: ModelCatalogApi;
   private readonly deps: ProtocolDeps;
-  private readonly modelCatalog: ModelCatalog;
   private readonly streamClient: RcpStreamClient = new RcpStreamClient();
   private readonly adapters: Map<string, ProviderAdapter> = new Map<string, ProviderAdapter>();
 
   constructor(deps: ProtocolDeps) {
     this.deps = deps;
-    this.modelCatalog = new ModelCatalog();
-    this.catalog = this.modelCatalog;
+    // v3.2：目录只含厂商预设 + RDB 注册表里用户勾选的真实模型；init() 由 AppServices await
+    this.catalog = new ModelCatalog(deps);
     this.adapters.set('deepseek_responses', new DeepSeekResponsesAdapter());
     this.adapters.set('anthropic_messages', new AnthropicAdapter());
     this.adapters.set('openai_chat', new OpenAICompatAdapter());
-    // 异步补齐设置页里的自定义端点（失败不影响内置模型）
-    this.loadCustomProfilesFromSettings();
   }
 
   /** 取适配器（每次 send 都用新实例：Anthropic/OpenAI 的解析器带跨事件状态）。 */
@@ -200,20 +203,15 @@ export class ProtocolLayerImpl implements ProtocolLayer {
     }
   }
 
-  /** 连接测试：各协议用自己的"最小真实请求"，比 /models 更能验证模型名。 */
-  async testConnection(profile: ModelProfile): Promise<ConnectionTestResult> {
-    let key: string = '';
-    try {
-      const stored: string | null = await this.deps.secrets.get(profile.assetKeyAlias);
-      key = stored === null ? '' : stored;
-    } catch (e) {
-      const failed: ConnectionTestResult = {
-        ok: false,
-        latencyMs: 0,
-        message: '读取密钥失败，请重新保存一次密钥'
-      };
-      return failed;
-    }
+  /**
+   * 连接测试。
+   * - 已选具体模型：发 1 token 的最小真实对话（同时验证密钥 + 模型名 + 地址）；
+   * - 只验密钥（`profile.modelId` 为空，来自 `catalog.buildProfile(providerId, '')`）：
+   *   改为 `GET /models` 探测，一次拿到密钥是否可用与可见模型数量。
+   * @param apiKeyOverride 输入框里尚未保存的新 Key（优先于 Asset Store 中的旧 Key）
+   */
+  async testConnection(profile: ModelProfile, apiKeyOverride?: string): Promise<ConnectionTestResult> {
+    const key: string = await this.resolveKey(profile, apiKeyOverride);
     if (key.length === 0) {
       const missing: ConnectionTestResult = {
         ok: false,
@@ -221,6 +219,10 @@ export class ProtocolLayerImpl implements ProtocolLayer {
         message: `还没有填写「${profile.label}」的密钥`
       };
       return missing;
+    }
+    const modelId: string = profile.modelId === undefined || profile.modelId === null ? '' : profile.modelId.trim();
+    if (modelId.length === 0) {
+      return this.probeModels(profile, key);
     }
 
     if (profile.protocol === 'deepseek_responses') {
@@ -263,43 +265,23 @@ export class ProtocolLayerImpl implements ProtocolLayer {
   }
 
   /**
-   * 探测可用模型列表（OpenAI 兼容 `/models`）。
-   * 失败返回空数组（设置页不应因此报错）。
+   * 真实模型探测：DeepSeek `GET {baseUrl}/models`、Anthropic `GET {baseUrl}/v1/models`、
+   * OpenAI 兼容 `GET {baseUrl}/models`（baseUrl 已含 /v1 时不重复拼接）。
+   * 任何失败（无 Key / 非 200 / 网络异常 / 非法 JSON）都返回空数组，不抛错。
+   * @param apiKeyOverride 输入框里尚未保存的新 Key
    */
-  async listRemoteModels(profile: ModelProfile): Promise<string[]> {
-    const empty: string[] = [];
-    let key: string = '';
-    try {
-      const stored: string | null = await this.deps.secrets.get(profile.assetKeyAlias);
-      key = stored === null ? '' : stored;
-    } catch (e) {
-      return empty;
-    }
+  async listRemoteModels(profile: ModelProfile, apiKeyOverride?: string): Promise<RemoteModelInfo[]> {
+    const empty: RemoteModelInfo[] = [];
+    const key: string = await this.resolveKey(profile, apiKeyOverride);
     if (key.length === 0) {
       return empty;
     }
-    let spec: HttpRequestSpec;
-    if (profile.protocol === 'openai_chat') {
-      spec = new OpenAICompatAdapter().buildModelsRequest(profile);
-    } else {
-      const headers: Map<string, string> = new Map<string, string>();
-      headers.set('accept', 'application/json');
-      spec = {
-        url: joinUrl(profile.baseUrl, '/models'),
-        method: 'GET',
-        headers: headers,
-        bodyJson: '',
-        timeoutMs: 20000,
-        stream: false
-      };
-    }
-    this.applyAuthHeaders(spec, profile, key);
     try {
-      const resp = await this.streamClient.fetchOnce(spec);
+      const resp = await this.streamClient.fetchOnce(this.buildModelsSpec(profile, key));
       if (resp.statusCode !== 200) {
         return empty;
       }
-      return new OpenAICompatAdapter().parseModelsResponse(resp.body);
+      return parseModelsResponse(resp.body);
     } catch (e) {
       return empty;
     }
@@ -314,56 +296,73 @@ export class ProtocolLayerImpl implements ProtocolLayer {
     return buildLocalTitle(firstUserText, assistantText);
   }
 
-  /** 从设置页读取自定义端点并注册（构造时异步执行一次）。 */
-  private async loadCustomProfilesFromSettings(): Promise<void> {
+  // ---------------------------------------------------------------- 内部
+
+  /** 取密钥：优先用调用方传入的未保存新 Key；都没有返回空串。 */
+  private async resolveKey(profile: ModelProfile, apiKeyOverride?: string): Promise<string> {
+    if (apiKeyOverride !== undefined && apiKeyOverride !== null) {
+      const trimmed: string = apiKeyOverride.trim();
+      if (trimmed.length > 0) {
+        return trimmed;
+      }
+    }
     try {
-      const customModelId: string = await this.deps.settings.getString(SettingsKeys.CUSTOM_MODEL_ID, '');
-      const customBaseUrl: string = await this.deps.settings.getString(SettingsKeys.CUSTOM_BASE_URL, '');
-      if (customModelId.length > 0) {
-        const base: string = customBaseUrl.length > 0 ? customBaseUrl : 'https://api.openai.com/v1';
-        const custom: ModelProfile = {
-          providerId: 'custom',
-          modelId: customModelId,
-          protocol: 'openai_chat',
-          baseUrl: base,
-          assetKeyAlias: 'openaiCompat.apiKey',
-          contextWindow: 128000,
-          cacheMissToHitRatio: 4,
-          cacheIdleTtlSec: 600,
-          supportsServerWebTools: false,
-          supportsThinking: true,
-          supportsJsonSchema: true,
-          label: '自定义兼容接口',
-          builtin: false
-        };
-        this.modelCatalog.register(custom);
+      const stored: string | null = await this.deps.secrets.get(profile.assetKeyAlias);
+      if (stored === null || stored === undefined) {
+        return '';
       }
-      const anthropicBaseUrl: string = await this.deps.settings.getString(SettingsKeys.ANTHROPIC_BASE_URL, '');
-      if (anthropicBaseUrl.length > 0) {
-        const profiles: ModelProfile[] = this.modelCatalog.listProfiles();
-        for (const one of profiles) {
-          if (one.providerId === 'anthropic') {
-            const override: ModelProfile = {
-              providerId: one.providerId,
-              modelId: one.modelId,
-              protocol: one.protocol,
-              baseUrl: anthropicBaseUrl,
-              assetKeyAlias: one.assetKeyAlias,
-              contextWindow: one.contextWindow,
-              cacheMissToHitRatio: one.cacheMissToHitRatio,
-              cacheIdleTtlSec: one.cacheIdleTtlSec,
-              supportsServerWebTools: one.supportsServerWebTools,
-              supportsThinking: one.supportsThinking,
-              supportsJsonSchema: one.supportsJsonSchema,
-              label: one.label,
-              builtin: one.builtin
-            };
-            this.modelCatalog.register(override);
-          }
-        }
-      }
+      return stored.trim();
     } catch (e) {
-      // 设置读取失败不影响内置模型
+      return '';
+    }
+  }
+
+  /** 组装 `/models` 探测请求（含各协议鉴权头）。 */
+  private buildModelsSpec(profile: ModelProfile, key: string): HttpRequestSpec {
+    const headers: Map<string, string> = new Map<string, string>();
+    headers.set('accept', 'application/json');
+    if (profile.protocol === 'anthropic_messages') {
+      headers.set('x-api-key', key);
+      headers.set('anthropic-version', ANTHROPIC_VERSION);
+    } else {
+      headers.set('authorization', `Bearer ${key}`);
+    }
+    const spec: HttpRequestSpec = {
+      url: modelsUrl(profile.protocol, profile.baseUrl),
+      method: 'GET',
+      headers: headers,
+      bodyJson: '',
+      timeoutMs: MODELS_PROBE_TIMEOUT_MS,
+      stream: false
+    };
+    return spec;
+  }
+
+  /** 只验密钥：/models 探测并把可见模型 id 回显给设置页。 */
+  private async probeModels(profile: ModelProfile, key: string): Promise<ConnectionTestResult> {
+    try {
+      const resp = await this.streamClient.fetchOnce(this.buildModelsSpec(profile, key));
+      if (resp.statusCode !== 200) {
+        const info = mapHttpStatus(resp.statusCode, resp.body);
+        const failed: ConnectionTestResult = { ok: false, latencyMs: resp.latencyMs, message: info.message };
+        return failed;
+      }
+      const models: RemoteModelInfo[] = parseModelsResponse(resp.body);
+      const ids: string[] = modelIdsOf(models);
+      const message: string = ids.length > 0
+        ? `连接正常，探测到 ${ids.length} 个可用模型` : '连接正常，但该地址没有返回模型列表';
+      const ok: ConnectionTestResult = {
+        ok: true,
+        latencyMs: resp.latencyMs,
+        message: message,
+        modelIds: ids
+      };
+      return ok;
+    } catch (e) {
+      const err: Error = e as Error;
+      const message: string = err.message === undefined ? '网络请求失败，请检查网络后重试' : err.message;
+      const failed: ConnectionTestResult = { ok: false, latencyMs: 0, message: message };
+      return failed;
     }
   }
 }

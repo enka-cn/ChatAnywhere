@@ -185,17 +185,19 @@ test('视觉：SymbolGlyph 使用点 ≥60，且 app/Theme.ets 被 ≥15 个 UI 
 // ---------------------------------------------------------------------------
 // 7) 深浅色资源键集合一致
 // ---------------------------------------------------------------------------
-test('资源：base/dark color.json 键集合一致（v3 各 38 键）', () => {
+test('资源：base/dark color.json 键集合一致（v3.2 各 46 键）', () => {
   const base = JSON.parse(read(path.join(RES, 'base', 'element', 'color.json')));
   const dark = JSON.parse(read(path.join(RES, 'dark', 'element', 'color.json')));
   assert.ok(Array.isArray(base.color) && Array.isArray(dark.color), 'color.json 结构异常');
   const bk = base.color.map((c) => c.name);
   const dk = dark.color.map((c) => c.name);
   assert.deepEqual(bk, dk, '深浅色资源键集合不一致');
-  assert.equal(bk.length, 38, `颜色键数量 ${bk.length} ≠ 38（v3 设计令牌基线）`);
+  assert.equal(bk.length, 46, `颜色键数量 ${bk.length} ≠ 46（v3.2 设计令牌基线：38 + 8 头像底色）`);
   assert.ok(bk.includes('brand') && bk.includes('bg_page') && bk.includes('text_primary'),
     '缺少关键语义色（brand/bg_page/text_primary）');
-  console.log(`  证据：base=${bk.length} 键 / dark=${dk.length} 键，集合完全一致`);
+  const avatarTones = bk.filter((name) => name.startsWith('avatar_bg_'));
+  assert.equal(avatarTones.length, 8, `avatar_bg_* 数量 ${avatarTones.length} ≠ 8`);
+  console.log(`  证据：base=${bk.length} 键 / dark=${dk.length} 键，集合完全一致（含 8 个 avatar_bg_*）`);
 });
 
 // ---------------------------------------------------------------------------
@@ -244,7 +246,7 @@ test('契约：packages/*/Index.ets 与 interfaces/** 结构完整，ChatRuntime
     assert.ok(existsSync(dir), `packages/${pkg}/src/main/ets/interfaces 缺失`);
     interfaceFiles.push(...readdirSync(dir).filter((n) => n.endsWith('.ets')));
   }
-  assert.equal(interfaceFiles.length, 19, `契约接口文件数 ${interfaceFiles.length} ≠ 19（可能被删改）`);
+  assert.equal(interfaceFiles.length, 20, `契约接口文件数 ${interfaceFiles.length} ≠ 20（v3.2 新增 ModelRegistryApi）`);
 
   const api = read(path.join(CHAT_ETS, 'model', 'ChatRuntimeApi.ets'));
   for (const method of ['init(', 'send(', 'stop(', 'retryLast(', 'switchBranch(', 'editUserNode(',
@@ -258,22 +260,33 @@ test('契约：packages/*/Index.ets 与 interfaces/** 结构完整，ChatRuntime
 });
 
 // ---------------------------------------------------------------------------
-// 10) 签名配置：unsigned 校验回退后必须完整恢复
+// 10) 构建配置：公开仓库已脱敏（无签名材料/无用户绝对路径/无明文口令）
 // ---------------------------------------------------------------------------
-test('构建配置：build-profile.json5 保留完整 signingConfigs（unsigned 回退后已恢复）', () => {
+test('构建配置：build-profile.json5 已脱敏（signingConfigs 为空数组或安全配置，无用户绝对路径/明文口令）', () => {
   const profilePath = path.join(REPO, 'build-profile.json5');
   const text = read(profilePath);
-  // 并发构建窗口：tools/build.ps1 在 unsigned 回退期间会临时清空 signingConfigs，
-  // 并在 finally 恢复。此时断言会误报，显式跳过（最终验收在无构建持锁时复跑）。
-  if (!text.includes('certpath') && existsSync(path.join(REPO, '.build.lock'))) {
-    skip('构建配置：检测到并发构建持锁（unsigned 回退窗口），跳过签名恢复断言', '.build.lock 存在');
-    return;
+  assert.ok(text.includes('"signingConfigs"'), 'build-profile.json5 缺少 signingConfigs 字段');
+  const match = text.match(/"signingConfigs"\s*:\s*\[([\s\S]*?)\]/);
+  assert.ok(match, '无法解析 signingConfigs 片段');
+  const inner = match[1].trim();
+  if (inner.length === 0) {
+    console.log('  证据：signingConfigs 为空数组（公开仓库已脱敏，签名材料保留在 gitignore 的 build-profile.local.json5）');
+  } else {
+    // 允许合法签名配置，但不得泄露本机用户路径或明文口令
+    assert.ok(!/[A-Za-z]:[\\/]/.test(inner), 'signingConfigs 含 Windows 用户绝对路径（应脱敏）');
+    assert.ok(!/\/(?:Users|home)\//.test(inner), 'signingConfigs 含用户目录绝对路径（应脱敏）');
+    for (const key of ['keyPassword', 'storePassword']) {
+      const pw = new RegExp(`"${key}"\\s*:\\s*"([^"]{8,})"`).exec(inner);
+      assert.equal(pw, null, `signingConfigs 含明文口令 ${key}`);
+    }
+    console.log('  证据：signingConfigs 为非空安全配置（无绝对路径/明文口令）');
   }
-  assert.ok(text.includes('"signingConfigs"'), 'build-profile.json5 缺少 signingConfigs');
-  for (const field of ['certpath', 'storeFile', 'keyAlias', 'profile', 'signAlg', 'signingConfig']) {
-    assert.ok(text.includes(field), `build-profile.json5 缺少签名材料字段 ${field}`);
-  }
-  console.log('  证据：signingConfigs + certpath/storeFile/keyAlias/profile/signAlg 全部保留');
+  const localPath = path.join(REPO, 'build-profile.local.json5');
+  assert.ok(existsSync(localPath), '本机签名材料备份 build-profile.local.json5 不存在');
+  const gitignore = read(path.join(REPO, '.gitignore'));
+  assert.ok(gitignore.includes('build-profile.local.json5'),
+    '.gitignore 未忽略 build-profile.local.json5（本机签名材料可能被提交）');
+  console.log('  证据：build-profile.local.json5 存在且已被 .gitignore 忽略');
 });
 
 summarize();

@@ -155,6 +155,9 @@ UI 页面通过 `AppServices.get()` 拿单例，**不要**自己 new 服务、�
 | L1 模板密钥占位符 | 约定 `{{secret:资产别名}}` 由运行器从 Asset Store 注入；密钥不落清单、不进日志 | 避免明文密钥进入可分享的 Skill JSON |
 | v3 六档思考的厂商边界 | OpenAI 兼容端点 `xhigh → high`（无 max 档）；DeepSeek `med` 发 `medium`（服务端归一化 high）；`supportsThinking=false` 不发思考参数 | 各厂商参数集不同；偏差只会降低思考强度，不会 400 |
 | v3 采样参数互斥 | Anthropic thinking 开启或已设 temperature 时不透传 `top_p`；OpenAI 推理模型发 `reasoning_effort` 时不透传 `top_p` | 严格端点会因同时采样参数 400 |
+| v3.2 模型目录无占位模型 | `ModelCatalog` 只保留 3 条厂商预设（deepseek/anthropic/openai_compat），**不含任何具体模型 id**；模型必须经用户对真实端点「测试连接 / 拉取模型」后写入 RDB `provider_models` 并勾选启用，才会出现在顶栏与角色配置中；新发现模型默认未勾选 | 避免再次出现"假模型能选但不可用"；无模型时 UI 给中文引导 |
+| v3.2 自定义 OpenAI 兼容端点思考能力 | `supportsThinking` 按模型名启发式（gpt-5*/o1/o3/o4*/*reasoner*/*thinking*/deepseek-r* 等才 true），其余不发送 `reasoning_effort` | 非推理模型被塞 reasoning 参数会 400；启发式宁可少发 |
+| v3.2 公开仓库签名配置 | `build-profile.json5` 已脱敏（`signingConfigs: []`），本机签名材料备份在 gitignore 的 `build-profile.local.json5`；DevEco 可一键重新自动签名 | 避免把用户绝对路径/加密口令推进公开 Git |
 
 ## 8. 脱离鸿蒙的纯逻辑自测（QA 提供）
 
@@ -252,5 +255,20 @@ pwsh tools/logic-tests/run.ps1
 - **角色（Persona）**：`app/PersonaStore.ets` 持久化（Preferences JSON）；会话绑定角色（`persona.session.<id>`），新建对话继承全局默认角色（模型 + 思考档位）。
 - **技能三级继承**：全局总开关（SkillRepository.enabled）⊂ 角色默认绑定（`PersonaProfile.defaultSkills`）⊂ 当前对话临时开关（`skill.override.<sessionId>`）；`PersonaStore.effectiveSkills` 计算，运行时只注入生效技能。
 - **附件**：`AttachmentRef{kind: image|file|link}` → `CanonicalItem`（image / file_ref），随用户消息落盘。
+- **角色头像（v3.2）**：`PersonaProfile.avatarIcon / avatarTone` 存 key 字符串；`app/PersonaAvatars.ets` 提供 10 个系统符号图标 + 8 个低饱和底色（`color.json` 的 `avatar_bg_*`，base/dark 各 46 键），旧数据缺字段时 sanitize 回退 `persona/blue`。
+
+### 10.6 v3.2 模型目录与记忆透明化
+
+- **真实模型注册表**：RDB 表 `provider_models(provider_id, model_id, display_name, meta_json, enabled, discovered_at)`（`core_model/impl/RdbRepository.ets` 实现 `ModelRegistryApi`）。`ModelCatalog.init()` 只装载 `enabled=true` 的记录并配厂商预设生成 `ModelProfile`；`hasModels()=false` 时顶栏显示「未选择模型」并引导去设置。
+- **探测端点**（`core_protocol/ProtocolLayerFactory` + `util/RemoteModels.ets`）：
+
+  | 厂商 | 端点 | 鉴权 |
+  | --- | --- | --- |
+  | DeepSeek | `GET {baseUrl}/models` | `Authorization: Bearer` |
+  | Anthropic | `GET {baseUrl}/v1/models` | `x-api-key` + `anthropic-version: 2023-06-01` |
+  | OpenAI 兼容 | `GET {baseUrl}/models`（已含 `/v1` 不重复拼） | `Authorization: Bearer` |
+
+  `testConnection(profile, apiKeyOverride?)` / `listRemoteModels(profile, apiKeyOverride?)` 优先使用输入框里未保存的新 Key；`parseModelsResponse` 兼容 `data[] / models[] / 裸数组 / 字符串数组`，坏 JSON 返回 `[]`。
+- **记忆整理透明化**：`RuntimeSnapshot` 暴露 `hasModel / lastCompactionAt / lastCompactionBeforeTokens / lastCompactionAfterTokens / lastCompactionSummary`；设置「记忆与缓存」卡展示当前会话 Token/窗口占比、缓存命中率，并支持「立即整理记忆」与最近整理前后对比 + 摘要展开。
 - **SKILL.md 编解码**：`core_plugin/SkillMarkdown.ets` 的 `SkillMarkdownCodec`（manifest ↔ markdown），创造室/技能页共用。
 

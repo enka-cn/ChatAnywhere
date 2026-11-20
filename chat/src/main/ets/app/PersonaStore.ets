@@ -25,6 +25,10 @@ export interface PersonaProfile {
   maxTurns: number;
   /** 角色默认绑定技能 id（三级继承中间层）。 */
   defaultSkills: string[];
+  /** 头像系统符号键（PersonaAvatars.ICONS 中的 key，缺省 'persona'）。 */
+  avatarIcon: string;
+  /** 头像低饱和底色键（PersonaAvatars.TONES 中的 key，缺省 'blue'）。 */
+  avatarTone: string;
   builtin: boolean;
   updatedAt: number;
 }
@@ -139,13 +143,15 @@ export class PersonaStore {
       id: `p_${now.toString(36)}_${Math.floor(Math.random() * 1000).toString(36)}`,
       name: '新角色',
       prompt: '',
-      providerId: 'deepseek',
-      modelId: 'deepseek-flash',
+      providerId: '',
+      modelId: '',
       effortLevel: 'med',
       temperature: 0.7,
       topP: 0.95,
       maxTurns: 20,
       defaultSkills: [],
+      avatarIcon: 'persona',
+      avatarTone: 'blue',
       builtin: false,
       updatedAt: now
     };
@@ -310,6 +316,8 @@ export class PersonaStore {
       topP: src.topP,
       maxTurns: src.maxTurns,
       defaultSkills: [],
+      avatarIcon: src.avatarIcon,
+      avatarTone: src.avatarTone,
       builtin: src.builtin,
       updatedAt: src.updatedAt
     };
@@ -327,13 +335,15 @@ export class PersonaStore {
       id: src.id,
       name: src.name === undefined || src.name.length === 0 ? '未命名角色' : src.name,
       prompt: src.prompt === undefined ? '' : src.prompt,
-      providerId: src.providerId === undefined || src.providerId.length === 0 ? 'deepseek' : src.providerId,
-      modelId: src.modelId === undefined || src.modelId.length === 0 ? 'deepseek-flash' : src.modelId,
+      providerId: src.providerId === undefined ? '' : src.providerId,
+      modelId: src.modelId === undefined ? '' : src.modelId,
       effortLevel: src.effortLevel === undefined ? 'med' : src.effortLevel,
       temperature: src.temperature === undefined ? 0.7 : Math.min(2, Math.max(0, src.temperature)),
       topP: src.topP === undefined ? 0.95 : Math.min(1, Math.max(0.1, src.topP)),
       maxTurns: src.maxTurns === undefined ? 20 : Math.min(50, Math.max(4, src.maxTurns)),
       defaultSkills: [],
+      avatarIcon: src.avatarIcon === undefined || src.avatarIcon.length === 0 ? 'persona' : src.avatarIcon,
+      avatarTone: src.avatarTone === undefined || src.avatarTone.length === 0 ? 'blue' : src.avatarTone,
       builtin: src.builtin === true,
       updatedAt: src.updatedAt === undefined ? Date.now() : src.updatedAt
     };
@@ -354,13 +364,15 @@ export class PersonaStore {
       id: 'p_default',
       name: '默认助手',
       prompt: '简洁、直接、中文回答，避免冗余客套。',
-      providerId: 'deepseek',
-      modelId: 'deepseek-flash',
+      providerId: '',
+      modelId: '',
       effortLevel: 'med',
       temperature: 0.7,
       topP: 0.95,
       maxTurns: 20,
       defaultSkills: ['tech_doc_search'],
+      avatarIcon: 'persona',
+      avatarTone: 'blue',
       builtin: true,
       updatedAt: now
     };
@@ -368,13 +380,15 @@ export class PersonaStore {
       id: 'p_arch',
       name: '系统架构师',
       prompt: '以资深终端系统工程师视角分析架构取舍、性能瓶颈与落地方案。当前日期：{{date}}。',
-      providerId: 'deepseek',
-      modelId: 'deepseek-v4-pro',
+      providerId: '',
+      modelId: '',
       effortLevel: 'high',
       temperature: 0.3,
       topP: 0.9,
       maxTurns: 30,
       defaultSkills: ['tech_doc_search', 'web_article_extract'],
+      avatarIcon: 'plan',
+      avatarTone: 'violet',
       builtin: true,
       updatedAt: now
     };
@@ -382,13 +396,15 @@ export class PersonaStore {
       id: 'p_paper',
       name: '技术精读',
       prompt: '提炼论文与文档的核心贡献、量化指标与局限性，并保留原始出处。',
-      providerId: 'anthropic',
-      modelId: 'claude-sonnet-4-5',
+      providerId: '',
+      modelId: '',
       effortLevel: 'high',
       temperature: 0.2,
       topP: 0.9,
       maxTurns: 16,
       defaultSkills: ['tech_doc_search'],
+      avatarIcon: 'research',
+      avatarTone: 'teal',
       builtin: true,
       updatedAt: now
     };

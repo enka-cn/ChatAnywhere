@@ -38,6 +38,25 @@ export class TurnCoordinator {
     return this.busy || snapshot.streaming || snapshot.compacting;
   }
 
+  /**
+   * 取当前模型；v3.2 无真实模型时 ensureProfile 会写中文引导并返回 null。
+   * 优先级：无 Key 比无模型更前置（用户先填密钥才能拉模型）。
+   */
+  private async guardProfile(): Promise<ModelProfile | null> {
+    const profile: ModelProfile | null = await this.settings.ensureProfile();
+    if (profile !== null) {
+      return profile;
+    }
+    const snapshot = this.host.snapshot();
+    const hasKey: boolean = await this.settings.hasAnyApiKey();
+    snapshot.hasApiKey = hasKey;
+    if (!hasKey) {
+      snapshot.errorMessage = NO_KEY_HINT;
+    }
+    this.host.notifyNow();
+    return null;
+  }
+
   /** 发送一条消息（v3 附件随用户节点一起落盘，附件-only 也允许发送）。 */
   async send(text: string, attachments?: AttachmentRef[]): Promise<void> {
     const snapshot = this.host.snapshot();
@@ -46,7 +65,7 @@ export class TurnCoordinator {
     if (content.length === 0 && !hasAttachments) {
       return;
     }
-    let profile: ModelProfile | null = await this.settings.ensureProfile();
+    let profile: ModelProfile | null = await this.guardProfile();
     if (profile === null) {
       return;
     }
@@ -93,7 +112,7 @@ export class TurnCoordinator {
   /** 重新生成最后一条助手回复（生成新分支，旧回答保留）。 */
   async retryLast(): Promise<void> {
     const snapshot = this.host.snapshot();
-    const profile: ModelProfile | null = await this.settings.ensureProfile();
+    const profile: ModelProfile | null = await this.guardProfile();
     if (profile === null) {
       return;
     }
@@ -148,7 +167,7 @@ export class TurnCoordinator {
    */
   async regenerateNode(nodeId: string): Promise<void> {
     const snapshot = this.host.snapshot();
-    const profile: ModelProfile | null = await this.settings.ensureProfile();
+    const profile: ModelProfile | null = await this.guardProfile();
     if (profile === null) {
       return;
     }
@@ -195,7 +214,7 @@ export class TurnCoordinator {
     if (content.length === 0) {
       return;
     }
-    const profile: ModelProfile | null = await this.settings.ensureProfile();
+    const profile: ModelProfile | null = await this.guardProfile();
     if (profile === null) {
       return;
     }

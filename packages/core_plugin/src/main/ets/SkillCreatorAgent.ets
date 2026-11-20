@@ -196,7 +196,12 @@ export class SkillCreatorAgentImpl implements SkillCreatorApi {
     }
     let profile: ModelProfile;
     try {
-      profile = protocol.catalog.defaultProfile();
+      // v3.2：模型目录只含真实模型，未拉取模型时返回 null → 创造室降级到本地规则
+      const resolved: ModelProfile | null = protocol.catalog.defaultProfile();
+      if (resolved === null) {
+        return false;
+      }
+      profile = resolved;
     } catch (e) {
       return false;
     }

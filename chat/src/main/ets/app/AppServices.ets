@@ -102,8 +102,10 @@ export class AppServices {
     try {
       this.protocol = createProtocolLayer({
         secrets: this.model.secrets,
-        settings: this.model.repo
+        settings: this.model.repo,
+        models: this.model.repo
       });
+      await this.protocol.catalog.init();
       hilog.info(DOMAIN, TAG, 'protocol layer ready');
     } catch (e) {
       this.initError = `模型协议层初始化失败：${(e as Error).message}`;
@@ -223,7 +225,18 @@ export class AppServices {
   // 模型选择
   // ---------------------------------------------------------------------------
 
-  /** 从设置中解析当前模型；无配置时用目录默认模型（deepseek-flash）。 */
+  /** 是否已拉取到可用的真实模型（v3.2）。 */
+  hasModels(): boolean {
+    if (this.protocol === null) {
+      return false;
+    }
+    return this.protocol.catalog.hasModels();
+  }
+
+  /**
+   * 从设置中解析当前模型；模型全部来自真实探测（v3.2 无占位模型）。
+   * 无可用模型时抛出带中文引导的 Error，由调用方降级显示。
+   */
   async resolveActiveProfile(): Promise<ModelProfile> {
     const catalog: ModelCatalogApi = this.requireProtocol().catalog;
     const repo = this.requireModel().repo;
@@ -234,7 +247,11 @@ export class AppServices {
         return found;
       }
     }
-    return catalog.defaultProfile();
+    const fallback: ModelProfile | null = catalog.defaultProfile();
+    if (fallback !== null) {
+      return fallback;
+    }
+    throw new Error('还没有可用的真实模型，请到「设置 → 模型与密钥」填写密钥并拉取模型');
   }
 
   /** 切换当前模型（落盘）。 */

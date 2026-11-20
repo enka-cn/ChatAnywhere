@@ -103,7 +103,12 @@ export class SnapshotNotifier {
       searchTrace: this.traceProvider(),
       sources: copySources(source.sources),
       nodeCount: source.nodeCount,
-      hasApiKey: source.hasApiKey
+      hasApiKey: source.hasApiKey,
+      hasModel: source.hasModel,
+      lastCompactionAt: source.lastCompactionAt,
+      lastCompactionBeforeTokens: source.lastCompactionBeforeTokens,
+      lastCompactionAfterTokens: source.lastCompactionAfterTokens,
+      lastCompactionSummary: source.lastCompactionSummary
     };
     return copy;
   }

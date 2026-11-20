@@ -98,9 +98,9 @@ export function emptySnapshot(): RuntimeSnapshot {
     memoryRatio: 0,
     compacting: false,
     compactTip: '',
-    modelLabel: '深度求索·极速',
-    modelId: 'deepseek-flash',
-    providerId: 'deepseek',
+    modelLabel: '',
+    modelId: '',
+    providerId: '',
     thinkingLevel: 'med',
     webMode: 'off',
     personaName: '',
@@ -108,7 +108,13 @@ export function emptySnapshot(): RuntimeSnapshot {
     searchTrace: [],
     sources: [],
     nodeCount: 0,
-    hasApiKey: false
+    hasApiKey: false,
+    // v3.2：无模型引导 + 记忆整理指标（默认“从未整理”）。
+    hasModel: false,
+    lastCompactionAt: 0,
+    lastCompactionBeforeTokens: 0,
+    lastCompactionAfterTokens: 0,
+    lastCompactionSummary: ''
   };
   return snapshot;
 }

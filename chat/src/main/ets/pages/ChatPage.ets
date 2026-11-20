@@ -564,6 +564,14 @@ struct ChatPage {
     });
   }
 
+  /** 无模型 / 模型胶囊半模态：直达设置「模型与密钥」拉取真实模型。 */
+  private goSettingsModels(): void {
+    const params: SettingsPageParams = { from: 'chat', category: 'models' };
+    this.getUIContext().getRouter().pushUrl({ url: RouteUrls.SETTINGS, params: params }).catch(() => {
+      this.toast('打开失败');
+    });
+  }
+
   private goPersonaSettings(): void {
     this.sheetOpen = false;
     const params: SettingsPageParams = { from: 'chat', category: 'personas' };
@@ -708,6 +716,20 @@ struct ChatPage {
     if (text.length === 0) {
       if (this.pendingAttachments.length > 0) {
         this.toast('补一句话再发送');
+      }
+      return;
+    }
+    if (!this.snapshot.hasModel) {
+      // 没有可用模型：输入与附件都保留，交给运行时给中文引导（不在这里堆教程）。
+      const pending: AttachmentRef[] = this.pendingAttachments.slice();
+      try {
+        if (pending.length > 0) {
+          await this.runtime.send(text, pending);
+        } else {
+          await this.runtime.send(text);
+        }
+      } catch (e) {
+        // 运行时会写 errorMessage
       }
       return;
     }
@@ -859,6 +881,9 @@ struct ChatPage {
         },
         onSelectThinking: (level: ThinkingLevel) => {
           this.runtime.setThinkingLevel(level);
+        },
+        onGoSettings: () => {
+          this.goSettingsModels();
         }
       })
       Blank()
@@ -1314,7 +1339,19 @@ struct ChatPage {
           .margin({ bottom: 4 })
       }
 
-      if (!this.snapshot.hasApiKey) {
+      if (!this.snapshot.hasModel) {
+        Row({ space: 6 }) {
+          SymbolGlyph(Icons.model).fontSize(Layout.fontCaption).fontColor([Theme.warning])
+          Text('还没有可用模型 · 去设置拉取')
+            .fontSize(Layout.fontCaption)
+            .fontColor(Theme.warning)
+        }
+        .width('100%')
+        .padding({ bottom: 6 })
+        .onClick(() => {
+          this.goSettingsModels();
+        })
+      } else if (!this.snapshot.hasApiKey) {
         Row({ space: 6 }) {
           SymbolGlyph(Icons.key).fontSize(Layout.fontCaption).fontColor([Theme.warning])
           Text('未配置密钥，点此填写')
@@ -1395,7 +1432,6 @@ struct ChatPage {
       .borderRadius(Layout.inputRadius)
       .backgroundColor(Theme.bgInput)
       .border({ width: 1, color: this.inputFocused ? Theme.brand : Theme.border })
-      .shadow({ radius: 14, color: '#0F000000', offsetY: 3 })
     }
     .width('100%')
     .constraintSize({ maxWidth: Layout.chatMaxWidth })
@@ -1589,7 +1625,6 @@ struct ChatPage {
       .height(48)
       .borderRadius(Layout.radiusL)
       .backgroundColor(Theme.brand)
-      .shadow({ radius: 18, color: '#332563EB', offsetY: 6 })
       Text('开始一段新对话')
         .fontSize(Layout.fontBody)
         .fontColor(Theme.textSecondary)
@@ -1748,7 +1783,6 @@ struct ChatPage {
           .width('78%')
           .constraintSize({ maxWidth: Layout.drawerMaxWidth })
           .height('100%')
-          .shadow({ radius: 24, color: '#26000000', offsetX: 4 })
           .transition(TransitionEffect.move(TransitionEdge.START).animation({ duration: Layout.animDuration, curve: Curve.EaseOut }))
           Blank()
         }

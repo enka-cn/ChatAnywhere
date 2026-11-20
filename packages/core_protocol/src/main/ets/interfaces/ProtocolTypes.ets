@@ -144,6 +144,15 @@ export interface HttpRequestSpec {
   stream: boolean;
 }
 
+/** 上游 /models 探测到的单个模型（v3.2 真实模型）。 */
+export interface RemoteModelInfo {
+  modelId: string;
+  /** 展示名（缺省用 modelId）。 */
+  displayName: string;
+  /** 上游原始信息 JSON（可选）。 */
+  metaJson?: string;
+}
+
 /** 连接测试结果（设置页「测试连接」）。 */
 export interface ConnectionTestResult {
   ok: boolean;
