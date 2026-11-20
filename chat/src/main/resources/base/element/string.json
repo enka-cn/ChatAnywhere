@@ -1,0 +1,16 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "任意聊：能装技能的鸿蒙原生对话助手"
+    },
+    {
+      "name": "ChatAbility_desc",
+      "value": "任意聊主界面：对话、联网清洗与技能创造室"
+    },
+    {
+      "name": "ChatAbility_label",
+      "value": "任意聊"
+    }
+  ]
+}

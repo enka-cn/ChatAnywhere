@@ -1,0 +1,14 @@
+{
+  "name": "chat",
+  "version": "1.0.0",
+  "description": "ChatAnyWhere entry HAP: pages, ArkUI views and system kit bridges.",
+  "main": "",
+  "author": "",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@app/core_model": "file:../packages/core_model",
+    "@app/core_protocol": "file:../packages/core_protocol",
+    "@app/core_context": "file:../packages/core_context",
+    "@app/core_plugin": "file:../packages/core_plugin"
+  }
+}

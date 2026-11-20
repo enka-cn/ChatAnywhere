@@ -1,0 +1,10 @@
+{
+  "module": {
+    "name": "core_context",
+    "type": "har",
+    "deviceTypes": [
+      "phone",
+      "tablet"
+    ]
+  }
+}

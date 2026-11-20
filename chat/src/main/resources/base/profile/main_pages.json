@@ -1,0 +1,8 @@
+{
+  "src": [
+    "pages/ChatPage",
+    "pages/SkillCreatorPage",
+    "pages/SkillManagerPage",
+    "pages/SettingsPage"
+  ]
+}

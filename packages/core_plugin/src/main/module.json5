@@ -1,0 +1,10 @@
+{
+  "module": {
+    "name": "core_plugin",
+    "type": "har",
+    "deviceTypes": [
+      "phone",
+      "tablet"
+    ]
+  }
+}

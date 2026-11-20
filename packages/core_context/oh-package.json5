@@ -1,0 +1,12 @@
+{
+  "name": "@app/core_context",
+  "version": "1.0.0",
+  "description": "Cache-aware compaction engine and modular prompt assembler.",
+  "main": "Index.ets",
+  "author": "",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@app/core_model": "file:../core_model",
+    "@app/core_protocol": "file:../core_protocol"
+  }
+}

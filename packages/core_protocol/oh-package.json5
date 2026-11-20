@@ -1,0 +1,11 @@
+{
+  "name": "@app/core_protocol",
+  "version": "1.0.0",
+  "description": "Multi-vendor provider adapters and SSE streaming client.",
+  "main": "Index.ets",
+  "author": "",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@app/core_model": "file:../core_model"
+  }
+}

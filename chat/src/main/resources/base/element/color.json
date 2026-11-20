@@ -1,0 +1,156 @@
+{
+  "color": [
+    {
+      "name": "start_window_background",
+      "value": "#FFFFFF"
+    },
+    {
+      "name": "bg_page",
+      "value": "#FFFFFF"
+    },
+    {
+      "name": "bg_surface",
+      "value": "#F5F6F8"
+    },
+    {
+      "name": "bg_surface_2",
+      "value": "#ECEEF2"
+    },
+    {
+      "name": "bg_surface_3",
+      "value": "#E3E6EC"
+    },
+    {
+      "name": "bg_input",
+      "value": "#F3F4F7"
+    },
+    {
+      "name": "text_primary",
+      "value": "#111318"
+    },
+    {
+      "name": "text_secondary",
+      "value": "#5A6270"
+    },
+    {
+      "name": "text_tertiary",
+      "value": "#8C94A3"
+    },
+    {
+      "name": "text_on_brand",
+      "value": "#FFFFFF"
+    },
+    {
+      "name": "brand",
+      "value": "#2563EB"
+    },
+    {
+      "name": "brand_pressed",
+      "value": "#1D4ED8"
+    },
+    {
+      "name": "brand_subtle",
+      "value": "#1A2563EB"
+    },
+    {
+      "name": "border",
+      "value": "#E6E8EE"
+    },
+    {
+      "name": "divider",
+      "value": "#F0F2F5"
+    },
+    {
+      "name": "bubble_user",
+      "value": "#111827"
+    },
+    {
+      "name": "bubble_user_text",
+      "value": "#FFFFFF"
+    },
+    {
+      "name": "code_bg",
+      "value": "#F3F4F7"
+    },
+    {
+      "name": "code_text",
+      "value": "#111318"
+    },
+    {
+      "name": "quote_bar",
+      "value": "#D8DDE6"
+    },
+    {
+      "name": "danger",
+      "value": "#DC2626"
+    },
+    {
+      "name": "danger_subtle",
+      "value": "#FDECEC"
+    },
+    {
+      "name": "warning",
+      "value": "#D97706"
+    },
+    {
+      "name": "warning_subtle",
+      "value": "#FFF4E5"
+    },
+    {
+      "name": "success",
+      "value": "#16A34A"
+    },
+    {
+      "name": "success_subtle",
+      "value": "#E8F7EE"
+    },
+    {
+      "name": "memory_ok",
+      "value": "#16A34A"
+    },
+    {
+      "name": "memory_warn",
+      "value": "#D97706"
+    },
+    {
+      "name": "memory_high",
+      "value": "#DC2626"
+    },
+    {
+      "name": "scrim",
+      "value": "#6B0A0C12"
+    },
+    {
+      "name": "drawer_bg",
+      "value": "#FFFFFF"
+    },
+    {
+      "name": "sheet_bg",
+      "value": "#FFFFFF"
+    },
+    {
+      "name": "chip_bg",
+      "value": "#F5F6F8"
+    },
+    {
+      "name": "chip_text",
+      "value": "#5A6270"
+    },
+    {
+      "name": "icon_primary",
+      "value": "#111318"
+    },
+    {
+      "name": "icon_secondary",
+      "value": "#8C94A3"
+    },
+    {
+      "name": "sheet_handle",
+      "value": "#ECEEF2"
+    },
+    {
+      "name": "toggle_off",
+      "value": "#ECEEF2"
+    }
+  ]
+}

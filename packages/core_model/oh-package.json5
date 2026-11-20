@@ -1,0 +1,9 @@
+{
+  "name": "@app/core_model",
+  "version": "1.0.0",
+  "description": "Unified item tree, append-only trajectory store and RDB/FTS5 repository.",
+  "main": "Index.ets",
+  "author": "",
+  "license": "Apache-2.0",
+  "dependencies": {}
+}

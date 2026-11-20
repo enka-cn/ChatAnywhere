@@ -1,0 +1,10 @@
+{
+  "module": {
+    "name": "core_protocol",
+    "type": "har",
+    "deviceTypes": [
+      "phone",
+      "tablet"
+    ]
+  }
+}

@@ -1,0 +1,1836 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ChatAnyWhere v3 · 华为 Pura X Max 阔折叠完整交互原型</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+  <style>
+    :root {
+      --bg-stage: #eef1f6;
+      --bg-page: #ffffff;
+      --bg-surface: #f5f6f8;
+      --bg-surface-2: #eceef2;
+      --bg-input: #f3f4f7;
+      --bg-user-bubble: #111827;
+      --text-user-bubble: #ffffff;
+      --text-primary: #111318;
+      --text-secondary: #5a6270;
+      --text-tertiary: #8c94a3;
+      --border: #e6e8ee;
+      --brand: #2563eb;
+      --brand-soft: rgba(37, 99, 235, 0.10);
+      --warn: #d97706;
+      --danger: #dc2626;
+      --bezel: #181a20;
+      --bezel-ring: #303440;
+    }
+
+    .dark {
+      --bg-stage: #07080b;
+      --bg-page: #0e1014;
+      --bg-surface: #171a21;
+      --bg-surface-2: #21252f;
+      --bg-input: #191c24;
+      --bg-user-bubble: #2563eb;
+      --text-user-bubble: #ffffff;
+      --text-primary: #f2f4f8;
+      --text-secondary: #a1a9b8;
+      --text-tertiary: #6d7585;
+      --border: #252934;
+      --brand: #4f83ff;
+      --brand-soft: rgba(79, 131, 255, 0.16);
+      --warn: #f59e0b;
+      --danger: #ef4444;
+      --bezel: #090a0d;
+      --bezel-ring: #2a2e39;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'HarmonyOS Sans SC', 'PingFang SC', sans-serif;
+      background: var(--bg-stage);
+      color: var(--text-primary);
+      transition: background 0.25s ease, color 0.25s ease;
+    }
+
+    .device-shell {
+      background: var(--bezel);
+      border: 2px solid var(--bezel-ring);
+      box-shadow: 0 28px 70px rgba(0, 0, 0, 0.22), 0 6px 20px rgba(0, 0, 0, 0.12);
+      transition: width 0.36s cubic-bezier(0.22, 1, 0.36, 1), height 0.36s cubic-bezier(0.22, 1, 0.36, 1), border-radius 0.32s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .device-screen {
+      background: var(--bg-page);
+      color: var(--text-primary);
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .posture-folded {
+      width: min(392px, calc(100vw - 24px));
+      height: min(548px, calc(100vh - 116px));
+      border-radius: 34px;
+      padding: 9px;
+    }
+    .posture-folded .device-screen { border-radius: 26px; }
+
+    .posture-unfolded {
+      width: min(920px, calc(100vw - 24px));
+      height: min(650px, calc(100vh - 116px));
+      border-radius: 28px;
+      padding: 10px;
+    }
+    .posture-unfolded .device-screen { border-radius: 20px; }
+
+    .thin-scroll::-webkit-scrollbar { width: 4px; height: 4px; }
+    .thin-scroll::-webkit-scrollbar-track { background: transparent; }
+    .thin-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+
+    .surface { background: var(--bg-surface); }
+    .surface-2 { background: var(--bg-surface-2); }
+    .bg-page { background: var(--bg-page); }
+    .bg-input { background: var(--bg-input); }
+    .text-pri { color: var(--text-primary); }
+    .text-sec { color: var(--text-secondary); }
+    .text-ter { color: var(--text-tertiary); }
+    .b-line { border-color: var(--border); }
+    .brand-pill { background: var(--brand-soft); color: var(--brand); }
+
+    .sheet-backdrop {
+      background: rgba(10, 12, 18, 0.42);
+      backdrop-filter: blur(4px);
+    }
+
+    @keyframes pulseDot {
+      0%, 100% { opacity: 0.35; transform: scale(0.88); }
+      50% { opacity: 1; transform: scale(1.1); }
+    }
+    .streaming-dot { animation: pulseDot 1.1s infinite ease-in-out; }
+
+    .hinge-hint {
+      position: absolute;
+      top: 0; bottom: 0; left: 50%; width: 1px;
+      background: linear-gradient(to bottom, transparent, rgba(148, 163, 184, 0.14) 20%, rgba(148, 163, 184, 0.14) 80%, transparent);
+      pointer-events: none; z-index: 5;
+    }
+
+    input[type="range"].app-slider {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 5px;
+      border-radius: 999px;
+      background: var(--bg-surface-2);
+      outline: none;
+    }
+    input[type="range"].app-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 999px;
+      background: var(--brand);
+      border: 2px solid var(--bg-page);
+      box-shadow: 0 2px 6px rgba(37, 99, 235, 0.35);
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-between py-3 px-3 select-none">
+
+  <!-- 原型控制台（设备外） -->
+  <header class="w-full max-w-[960px] flex flex-wrap items-center justify-between gap-2 mb-3">
+    <div class="flex items-center gap-2.5">
+      <div class="w-7 h-7 rounded-lg flex items-center justify-center text-white font-semibold text-xs" style="background: var(--brand);">C</div>
+      <div>
+        <div class="text-sm font-semibold text-pri leading-tight">ChatAnyWhere v3 · Pura X Max 交互原型</div>
+        <div id="postureMeta" class="text-[11px] text-sec leading-tight">展开态 · 7.7″ 阔内屏（全页面 Master-Detail 双栏）</div>
+      </div>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-1.5">
+      <div class="inline-flex p-0.5 rounded-xl surface border b-line">
+        <button id="btnFolded" type="button" class="px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition">
+          <i data-lucide="smartphone" class="w-3.5 h-3.5"></i>
+          <span>折叠态 5.4″</span>
+        </button>
+        <button id="btnUnfolded" type="button" class="px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition">
+          <i data-lucide="tablet" class="w-3.5 h-3.5"></i>
+          <span>展开态 7.7″</span>
+        </button>
+      </div>
+
+      <button id="btnSimMemory" type="button" class="px-2.5 py-1.5 rounded-xl text-xs font-medium surface border b-line text-sec hover:text-pri flex items-center gap-1.5 transition">
+        <i data-lucide="gauge" class="w-3.5 h-3.5"></i>
+        <span id="simMemoryLabel">记忆 34%</span>
+      </button>
+
+      <button id="btnTheme" type="button" class="p-2 rounded-xl surface border b-line text-sec hover:text-pri transition" title="切换浅色 / 深色">
+        <i id="themeIcon" data-lucide="moon" class="w-3.5 h-3.5"></i>
+      </button>
+
+      <button id="btnExportSpec" type="button" class="px-3 py-1.5 rounded-xl text-xs font-medium text-white flex items-center gap-1.5 transition shadow-sm" style="background: var(--brand);">
+        <i data-lucide="code-2" class="w-3.5 h-3.5"></i>
+        <span>ArkUI 适配指令</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- 华为 Pura X Max 设备模拟器 -->
+  <main class="flex-1 w-full flex items-center justify-center">
+    <div id="deviceShell" class="device-shell posture-unfolded">
+      <div id="hingeLine" class="hinge-hint"></div>
+      <div class="device-screen">
+
+        <!-- 状态栏 -->
+        <div class="h-6 px-4 flex items-center justify-between text-[11px] font-medium text-sec shrink-0">
+          <span class="tracking-tight">11:18</span>
+          <div class="flex items-center gap-1.5">
+            <span id="statusBreakpoint" class="px-1.5 py-0.2 rounded text-[10px] surface-2 text-sec font-mono">lg · 双栏</span>
+            <i data-lucide="wifi" class="w-3 h-3"></i>
+            <i data-lucide="battery-full" class="w-3.5 h-3.5"></i>
+          </div>
+        </div>
+
+        <!-- 页面级路由容器：chat / creator / skills / settings 全部为独立全页，复用左右双栏结构 -->
+        <div class="flex-1 min-h-0 flex relative overflow-hidden">
+
+          <!-- ==================== PAGE 1: 主对话页 ==================== -->
+          <div id="pageChat" class="flex-1 min-h-0 flex w-full">
+            <!-- 展开态左侧常驻会话栏 -->
+            <aside id="desktopSidebar" class="w-[224px] shrink-0 border-r b-line flex flex-col bg-page">
+              <div class="p-2.5 flex items-center gap-1.5">
+                <button id="btnNewChatSide" type="button" class="flex-1 h-9 px-3 rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 text-white transition hover:opacity-95" style="background: var(--brand);">
+                  <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+                  <span>新对话</span>
+                </button>
+                <button id="btnToggleSide" type="button" class="w-9 h-9 rounded-xl surface flex items-center justify-center text-sec hover:text-pri transition" title="收起边栏">
+                  <i data-lucide="panel-left-close" class="w-4 h-4"></i>
+                </button>
+              </div>
+
+              <div class="px-2.5 pb-2">
+                <div class="flex items-center gap-1.5 px-2.5 h-8 rounded-lg bg-input text-ter">
+                  <i data-lucide="search" class="w-3.5 h-3.5 shrink-0"></i>
+                  <input id="sideSearch" type="text" placeholder="搜索对话" class="w-full bg-transparent text-xs text-pri outline-none placeholder:text-[var(--text-tertiary)]" />
+                </div>
+              </div>
+
+              <div id="sideSessionList" class="flex-1 overflow-y-auto thin-scroll px-2 space-y-0.5"></div>
+
+              <div class="p-2 border-t b-line grid grid-cols-3 gap-1">
+                <button data-route="creator" type="button" class="route-btn py-2 rounded-xl flex flex-col items-center gap-1 text-[11px] text-sec hover:text-pri surface transition">
+                  <i data-lucide="file-pen-line" class="w-4 h-4"></i>
+                  <span>创造室</span>
+                </button>
+                <button data-route="skills" type="button" class="route-btn py-2 rounded-xl flex flex-col items-center gap-1 text-[11px] text-sec hover:text-pri surface transition">
+                  <i data-lucide="blocks" class="w-4 h-4"></i>
+                  <span>技能</span>
+                </button>
+                <button data-route="settings" type="button" class="route-btn py-2 rounded-xl flex flex-col items-center gap-1 text-[11px] text-sec hover:text-pri surface transition">
+                  <i data-lucide="sliders-horizontal" class="w-4 h-4"></i>
+                  <span>设置</span>
+                </button>
+              </div>
+            </aside>
+
+            <!-- 主对话画布 -->
+            <section class="flex-1 min-w-0 flex flex-col bg-page">
+              <div class="h-11 px-3 border-b b-line flex items-center justify-between gap-2 shrink-0">
+                <div class="flex items-center gap-1.5 min-w-0">
+                  <button id="btnMenuTop" type="button" class="w-8 h-8 rounded-xl flex items-center justify-center text-sec hover:text-pri surface transition" title="会话列表">
+                    <i data-lucide="panel-left" class="w-4 h-4"></i>
+                  </button>
+                  <button id="btnModelCapsule" type="button" class="h-8 px-2.5 rounded-full surface flex items-center gap-1.5 text-xs font-medium text-pri max-w-[260px] transition hover:opacity-90">
+                    <span id="capsuleModel" class="truncate">V4.1 Flash</span>
+                    <span class="text-ter">·</span>
+                    <span id="capsuleThink" class="text-sec shrink-0 font-mono text-[11px]">High</span>
+                    <i data-lucide="chevron-down" class="w-3.5 h-3.5 text-ter shrink-0"></i>
+                  </button>
+                </div>
+
+                <div class="flex items-center gap-1.5">
+                  <button id="btnSessionPersona" type="button" class="h-7 px-2.5 rounded-full surface text-[11px] font-medium text-sec hover:text-pri flex items-center gap-1 transition" title="切换当前对话角色">
+                    <i data-lucide="user-round" class="w-3 h-3"></i>
+                    <span id="topPersonaLabel">系统架构师</span>
+                  </button>
+                  <button id="btnNewChatTop" type="button" class="w-8 h-8 rounded-xl flex items-center justify-center text-sec hover:text-pri surface transition" title="新对话">
+                    <i data-lucide="square-pen" class="w-4 h-4"></i>
+                  </button>
+                </div>
+              </div>
+
+              <div id="chatScroll" class="flex-1 overflow-y-auto thin-scroll px-4 py-3.5">
+                <div id="chatStream" class="w-full max-w-[660px] mx-auto space-y-5 pb-3"></div>
+              </div>
+
+              <div class="px-3.5 pb-3 pt-1 shrink-0 bg-page">
+                <div class="w-full max-w-[660px] mx-auto">
+                  <div id="memoryWrap" class="hidden mb-1.5">
+                    <div id="memoryBubble" class="hidden mb-1.5 px-3 py-2 rounded-xl surface border b-line flex items-center justify-between gap-2 text-xs">
+                      <span id="memoryBubbleText" class="text-sec">对话记忆 76% · 缓存命中 89%</span>
+                      <button id="btnCompactNow" type="button" class="font-medium shrink-0" style="color: var(--brand);">立即整理</button>
+                    </div>
+                    <button id="btnMemoryBar" type="button" class="w-full flex items-center gap-2 py-0.5 group">
+                      <div class="flex-1 h-[3px] rounded-full surface-2 overflow-hidden">
+                        <div id="memoryFill" class="h-full rounded-full transition-all duration-300" style="width: 76%; background: var(--warn);"></div>
+                      </div>
+                      <span id="memoryPct" class="text-[10px] font-mono text-ter group-hover:text-pri">76%</span>
+                    </button>
+                  </div>
+
+                  <!-- 展开态输入框上方：本对话技能快捷开关（统一品牌蓝） -->
+                  <div id="unfoldedSkillBar" class="flex items-center gap-1.5 mb-2 overflow-x-auto thin-scroll"></div>
+
+                  <div id="pendingAttachments" class="hidden flex-wrap gap-1.5 mb-2"></div>
+
+                  <div class="rounded-[22px] bg-input border b-line px-2 py-1.5 flex items-end gap-1.5 focus-within:border-[var(--brand)] transition">
+                    <button id="btnAttach" type="button" class="w-8 h-8 rounded-full flex items-center justify-center text-sec hover:text-pri shrink-0 transition" title="添加附件">
+                      <i data-lucide="plus" class="w-4 h-4"></i>
+                    </button>
+                    <textarea id="chatInput" rows="1" placeholder="发消息…" class="flex-1 bg-transparent resize-none outline-none text-[14px] leading-6 text-pri placeholder:text-[var(--text-tertiary)] max-h-24 py-1 thin-scroll"></textarea>
+                    <button id="btnFoldSkillQuick" type="button" class="hidden w-8 h-8 rounded-full items-center justify-center shrink-0 transition" title="本对话技能">
+                      <i data-lucide="blocks" class="w-4 h-4"></i>
+                    </button>
+                    <button id="btnSend" type="button" class="w-8 h-8 rounded-full flex items-center justify-center text-white shrink-0 transition" style="background: var(--brand);" title="发送">
+                      <i id="sendIcon" data-lucide="arrow-up" class="w-4 h-4"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- 展开态按需滑出信源栏 -->
+            <aside id="onDemandSourcePane" class="hidden w-[280px] shrink-0 border-l b-line bg-page flex flex-col">
+              <div class="h-11 px-3 border-b b-line flex items-center justify-between shrink-0">
+                <span class="text-xs font-semibold text-pri">本轮信源</span>
+                <button id="btnCloseSourcePane" type="button" class="w-7 h-7 rounded-lg surface flex items-center justify-center text-sec hover:text-pri">
+                  <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                </button>
+              </div>
+              <div id="sourcePaneBody" class="flex-1 overflow-y-auto thin-scroll p-3"></div>
+            </aside>
+          </div>
+
+          <!-- ==================== PAGE 2: 技能创造室（Master-Detail 双栏独立页） ==================== -->
+          <div id="pageCreator" class="hidden flex-1 min-h-0 flex w-full bg-page">
+            <!-- 左栏：技能列表 + 搜索 + 新建（解决大量 Skill 胶囊难操作问题） -->
+            <aside id="creatorMaster" class="w-[232px] shrink-0 border-r b-line flex flex-col bg-page">
+              <div class="h-11 px-3 border-b b-line flex items-center justify-between shrink-0">
+                <div class="flex items-center gap-2">
+                  <button data-back-chat="1" type="button" class="back-chat-btn w-7 h-7 rounded-lg surface flex items-center justify-center text-sec hover:text-pri">
+                    <i data-lucide="arrow-left" class="w-4 h-4"></i>
+                  </button>
+                  <span class="text-sm font-semibold text-pri">创造室</span>
+                </div>
+                <button id="btnNewSkillMd" type="button" class="h-7 px-2.5 rounded-lg text-xs font-medium text-white flex items-center gap-1" style="background: var(--brand);">
+                  <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+                  <span>新建</span>
+                </button>
+              </div>
+              <div class="p-2.5">
+                <div class="flex items-center gap-1.5 px-2.5 h-8 rounded-lg bg-input text-ter">
+                  <i data-lucide="search" class="w-3.5 h-3.5 shrink-0"></i>
+                  <input id="creatorSearch" type="text" placeholder="搜索技能" class="w-full bg-transparent text-xs text-pri outline-none placeholder:text-[var(--text-tertiary)]" />
+                </div>
+              </div>
+              <div id="creatorSkillList" class="flex-1 overflow-y-auto thin-scroll px-2 pb-2 space-y-1"></div>
+            </aside>
+
+            <!-- 右栏：SKILL.md 编辑器 + 预览 + AI 改写 -->
+            <section id="creatorDetail" class="flex-1 min-w-0 flex flex-col bg-page">
+              <div class="h-11 px-3 border-b b-line flex items-center justify-between gap-2 shrink-0">
+                <div class="flex items-center gap-2 min-w-0">
+                  <button id="btnCreatorBackList" type="button" class="hidden w-7 h-7 rounded-lg surface items-center justify-center text-sec hover:text-pri">
+                    <i data-lucide="arrow-left" class="w-4 h-4"></i>
+                  </button>
+                  <span id="creatorActiveTitle" class="text-sm font-semibold text-pri truncate">联网清洗</span>
+                  <span class="px-1.5 py-0.5 rounded surface-2 text-[10px] font-mono text-sec">SKILL.md</span>
+                </div>
+                <div class="flex items-center gap-1.5">
+                  <div class="inline-flex p-0.5 rounded-lg surface text-[11px] font-medium">
+                    <button id="btnMdEdit" type="button" class="px-2 py-1 rounded-md transition">编辑</button>
+                    <button id="btnMdPreview" type="button" class="px-2 py-1 rounded-md transition">预览</button>
+                  </div>
+                  <button id="btnCreatorDryRun" type="button" class="h-7 px-2.5 rounded-lg surface text-xs font-medium text-pri">试跑</button>
+                  <button id="btnCreatorSave" type="button" class="h-7 px-3 rounded-lg text-xs font-medium text-white" style="background: var(--brand);">保存</button>
+                </div>
+              </div>
+
+              <div class="flex-1 min-h-0 flex flex-col p-3 gap-2.5 overflow-hidden">
+                <div class="flex-1 min-h-0 rounded-2xl surface border b-line overflow-hidden flex flex-col">
+                  <textarea id="skillMdEditor" class="flex-1 w-full p-3.5 bg-transparent resize-none outline-none font-mono text-xs leading-relaxed text-pri thin-scroll"></textarea>
+                  <div id="skillMdPreview" class="hidden flex-1 overflow-y-auto thin-scroll p-4 text-xs leading-relaxed text-pri space-y-2"></div>
+                  <div id="creatorDryRunBanner" class="hidden px-3.5 py-2 border-t b-line text-[11px] flex items-center justify-between brand-pill">
+                    <span id="creatorDryRunText">试跑通过 · 138ms</span>
+                    <button id="btnCloseDryRun" type="button" class="opacity-80 hover:opacity-100">关闭</button>
+                  </div>
+                </div>
+
+                <div class="rounded-2xl bg-input border b-line px-2.5 py-1.5 flex items-center gap-2 shrink-0">
+                  <i data-lucide="sparkles" class="w-4 h-4 shrink-0" style="color: var(--brand);"></i>
+                  <input id="creatorAiInput" type="text" placeholder="输入修改要求…" class="flex-1 bg-transparent text-xs text-pri outline-none placeholder:text-[var(--text-tertiary)]" />
+                  <button id="btnCreatorAiRewrite" type="button" class="px-3 py-1.5 rounded-xl text-xs font-medium text-white shrink-0" style="background: var(--brand);">改写</button>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <!-- ==================== PAGE 3: 我的技能（Master-Detail 双栏独立页） ==================== -->
+          <div id="pageSkills" class="hidden flex-1 min-h-0 flex w-full bg-page">
+            <aside id="skillsMaster" class="w-[232px] shrink-0 border-r b-line flex flex-col bg-page">
+              <div class="h-11 px-3 border-b b-line flex items-center justify-between shrink-0">
+                <div class="flex items-center gap-2">
+                  <button data-back-chat="1" type="button" class="back-chat-btn w-7 h-7 rounded-lg surface flex items-center justify-center text-sec hover:text-pri">
+                    <i data-lucide="arrow-left" class="w-4 h-4"></i>
+                  </button>
+                  <span class="text-sm font-semibold text-pri">技能</span>
+                </div>
+                <button id="btnSkillImport" type="button" class="h-7 px-2.5 rounded-lg surface text-xs font-medium text-pri">导入</button>
+              </div>
+              <div id="skillsMasterList" class="flex-1 overflow-y-auto thin-scroll p-2 space-y-1"></div>
+            </aside>
+
+            <section id="skillsDetail" class="flex-1 min-w-0 flex flex-col bg-page">
+              <div class="h-11 px-3 border-b b-line flex items-center justify-between shrink-0">
+                <div class="flex items-center gap-2 min-w-0">
+                  <button id="btnSkillsBackList" type="button" class="hidden w-7 h-7 rounded-lg surface items-center justify-center text-sec hover:text-pri">
+                    <i data-lucide="arrow-left" class="w-4 h-4"></i>
+                  </button>
+                  <span id="skillsDetailTitle" class="text-sm font-semibold text-pri truncate">联网清洗</span>
+                </div>
+                <button id="btnSkillOpenCreator" type="button" class="h-7 px-2.5 rounded-lg brand-pill text-xs font-medium">编辑 SKILL.md</button>
+              </div>
+              <div id="skillsDetailBody" class="flex-1 overflow-y-auto thin-scroll p-4"></div>
+            </section>
+          </div>
+
+          <!-- ==================== PAGE 4: 设置中心（Master-Detail 双栏 + Cherry Studio 级角色定制） ==================== -->
+          <div id="pageSettings" class="hidden flex-1 min-h-0 flex w-full bg-page">
+            <aside id="settingsMaster" class="w-[216px] shrink-0 border-r b-line flex flex-col bg-page">
+              <div class="h-11 px-3 border-b b-line flex items-center gap-2 shrink-0">
+                <button data-back-chat="1" type="button" class="back-chat-btn w-7 h-7 rounded-lg surface flex items-center justify-center text-sec hover:text-pri">
+                  <i data-lucide="arrow-left" class="w-4 h-4"></i>
+                </button>
+                <span class="text-sm font-semibold text-pri">设置</span>
+              </div>
+              <div id="settingsCategoryList" class="flex-1 overflow-y-auto thin-scroll p-2 space-y-1"></div>
+            </aside>
+
+            <section id="settingsDetail" class="flex-1 min-w-0 flex flex-col bg-page">
+              <div class="h-11 px-4 border-b b-line flex items-center justify-between shrink-0">
+                <div class="flex items-center gap-2 min-w-0">
+                  <button id="btnSettingsBackList" type="button" class="hidden w-7 h-7 rounded-lg surface items-center justify-center text-sec hover:text-pri">
+                    <i data-lucide="arrow-left" class="w-4 h-4"></i>
+                  </button>
+                  <span id="settingsDetailTitle" class="text-sm font-semibold text-pri truncate">角色与提示词</span>
+                </div>
+                <div id="settingsDetailActions"></div>
+              </div>
+              <div id="settingsDetailBody" class="flex-1 overflow-y-auto thin-scroll p-4"></div>
+            </section>
+          </div>
+
+          <!-- 折叠态专用：左侧滑出抽屉 -->
+          <div id="mobileDrawerBackdrop" class="hidden absolute inset-0 z-30 sheet-backdrop flex">
+            <div class="w-[78%] max-w-[276px] h-full bg-page flex flex-col shadow-2xl border-r b-line">
+              <div class="h-12 px-3 border-b b-line flex items-center justify-between">
+                <span class="text-sm font-semibold text-pri">对话</span>
+                <button id="btnCloseDrawer" type="button" class="w-8 h-8 rounded-lg flex items-center justify-center text-sec">
+                  <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+              </div>
+              <div class="p-2.5">
+                <button id="btnNewChatDrawer" type="button" class="w-full h-9 rounded-xl text-xs font-medium text-white flex items-center justify-center gap-1.5" style="background: var(--brand);">
+                  <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+                  <span>新对话</span>
+                </button>
+              </div>
+              <div id="drawerSessionList" class="flex-1 overflow-y-auto thin-scroll px-2 space-y-0.5"></div>
+              <div class="p-2 border-t b-line grid grid-cols-3 gap-1">
+                <button data-drawer-route="creator" type="button" class="py-2 rounded-xl surface flex flex-col items-center gap-1 text-[11px] text-sec">
+                  <i data-lucide="file-pen-line" class="w-4 h-4"></i>
+                  <span>创造室</span>
+                </button>
+                <button data-drawer-route="skills" type="button" class="py-2 rounded-xl surface flex flex-col items-center gap-1 text-[11px] text-sec">
+                  <i data-lucide="blocks" class="w-4 h-4"></i>
+                  <span>技能</span>
+                </button>
+                <button data-drawer-route="settings" type="button" class="py-2 rounded-xl surface flex flex-col items-center gap-1 text-[11px] text-sec">
+                  <i data-lucide="sliders-horizontal" class="w-4 h-4"></i>
+                  <span>设置</span>
+                </button>
+              </div>
+            </div>
+            <div id="drawerDismissArea" class="flex-1"></div>
+          </div>
+
+          <!-- 轻量半模态底部抽屉（仅用于快速即时操作：切模型滑条 / 上传附件 / 折叠态快切技能与角色 / 折叠态信源） -->
+          <div id="sheetBackdrop" class="hidden absolute inset-0 z-40 sheet-backdrop flex flex-col justify-end">
+            <div id="sheetDismissArea" class="flex-1"></div>
+            <div id="sheetPanel" class="bg-page rounded-t-[24px] border-t b-line max-h-[82%] flex flex-col shadow-2xl">
+              <div class="pt-2 pb-1 flex justify-center">
+                <div class="w-9 h-1 rounded-full surface-2"></div>
+              </div>
+              <div class="px-4 pb-2.5 flex items-center justify-between border-b b-line">
+                <span id="sheetTitle" class="text-sm font-semibold text-pri"></span>
+                <button id="btnCloseSheet" type="button" class="w-7 h-7 rounded-full surface flex items-center justify-center text-sec">
+                  <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                </button>
+              </div>
+              <div id="sheetBody" class="overflow-y-auto thin-scroll p-4"></div>
+            </div>
+          </div>
+
+          <!-- 应用内 Toast -->
+          <div id="appToast" class="hidden absolute top-14 left-1/2 -translate-x-1/2 z-50 px-3.5 py-2 rounded-full text-xs font-medium text-white shadow-lg" style="background: rgba(17, 24, 39, 0.92);"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer class="w-full max-w-[960px] mt-2.5 flex flex-wrap items-center justify-between gap-2 text-[11px] text-sec">
+    <span>点击左下角「创造室 / 技能 / 设置」体验完整双栏独立页 · 在「设置 → 角色与提示词」体验精细参数配置</span>
+    <span class="font-mono text-ter">Pura X Max · v3</span>
+  </footer>
+
+  <!-- ArkUI 适配指令弹窗 -->
+  <div id="specModal" class="hidden fixed inset-0 z-50 sheet-backdrop flex items-center justify-center p-4">
+    <div class="w-full max-w-2xl bg-page rounded-2xl border b-line shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+      <div class="px-5 py-3.5 border-b b-line flex items-center justify-between">
+        <div class="text-sm font-semibold text-pri">可直接喂给本地 DeepSeek Agent 的 Pura X Max v3 定稿指令</div>
+        <button id="btnCloseSpec" type="button" class="w-8 h-8 rounded-lg surface flex items-center justify-center text-sec">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+      <div class="p-4 overflow-y-auto thin-scroll">
+        <pre id="specCode" class="text-xs leading-relaxed font-mono surface p-3.5 rounded-xl text-pri whitespace-pre-wrap select-text"></pre>
+      </div>
+      <div class="px-5 py-3 border-t b-line flex justify-end gap-2">
+        <button id="btnCopySpec" type="button" class="px-4 py-2 rounded-xl text-xs font-medium text-white flex items-center gap-1.5" style="background: var(--brand);">
+          <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+          <span>复制指令</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const ARKUI_SPEC_TEXT = `请按 v3 终稿规范落地 ChatAnyWhere 的华为 Pura X Max（5.4" 阔外屏 / 7.7" 阔内屏）全页面前端架构：
+
+1. 统一 Master-Detail 页面架构（严禁用底部弹窗承载复杂页面）：
+   - 「创造室」「技能」「设置」全部为独立页面，复用主页双栏结构（HarmonyOS NavigationMode.Auto / SideBarContainer）：
+     * 展开态（>= 600vp）：左栏选类别/列表，右栏编辑具体配置。
+     * 折叠态（< 600vp）：自动退化为标准列表 → 推入详情编辑二级栈页。
+   - 底部半模态（bindSheet）严格仅用于轻量化即时操作：切模型与思考滑条、「+」上传附件、折叠态快速切本对话技能/角色、折叠态看信源。
+
+2. Cherry Studio 级「角色与提示词」独立配置页（位于设置中心）：
+   - 支持新建/复制/删除角色、设置新对话默认角色。
+   - 每个角色支持精细配置：名称、系统提示词编辑框（支持一键插入 {{date}} / {{clipboard}} 变量）、默认模型、默认思考强度（6 档滑条）、Temperature（0.0–2.0）、Top-P（0.0–1.0）、上下文轮数上限，以及该角色默认绑定的技能清单。
+   - 作用域分层：角色绑定到单个会话（新建时继承全局默认）；技能采用「全局总开关 ⊂ 角色默认绑定 ⊂ 当前对话临时开关」三级继承。
+
+3. 创造室（SkillCreatorPage）左列表 + 右 SKILL.md 编辑器：
+   - 取消胶囊列表，左栏用可搜索的纵向列表承载任意数量 Skill；右栏提供 SKILL.md 编辑/预览切换、试跑验证、保存落盘，以及底部一句话 AI 改写。
+
+4. 主对话页与视觉统一：
+   - 全站开关、选中胶囊、高亮状态统一使用单一品牌蓝 Theme.brand（移除混杂绿色）。
+   - 聊天框「+」严格用于附件上传；展开态输入框上方仅放当前对话技能临时开关；新对话保持极简空白。
+   - 回复底部提供「复制」「重试」与分支切换（< 1/2 >）；信源采用「思考流内嵌搜索 + 底部来源胶囊 + 点击按需滑出」三段式。
+   - 顶栏 Codex 风格 6 档思考滑条由各 ProviderAdapter 离线静态映射，UI 保持极简不展示技术映射注释。`;
+
+    const EFFORT_LEVELS = [
+      { idx: 0, short: '关闭' },
+      { idx: 1, short: 'Min' },
+      { idx: 2, short: 'Low' },
+      { idx: 3, short: 'Med' },
+      { idx: 4, short: 'High' },
+      { idx: 5, short: 'xHigh' }
+    ];
+
+    const MODEL_CATALOG = [
+      { id: 'deepseek-flash', name: 'V4.1 Flash', vendor: 'DeepSeek' },
+      { id: 'deepseek-v4-pro', name: 'V4 Pro', vendor: 'DeepSeek' },
+      { id: 'claude-sonnet', name: 'Claude Sonnet', vendor: 'Anthropic' },
+      { id: 'gpt-5', name: 'GPT-5', vendor: 'OpenAI' }
+    ];
+
+    const SETTINGS_CATEGORIES = [
+      { id: 'personas', label: '角色与提示词', icon: 'user-round' },
+      { id: 'models', label: '模型与密钥', icon: 'cpu' },
+      { id: 'memory', label: '记忆与缓存', icon: 'database' },
+      { id: 'sync', label: '跨端与数据', icon: 'laptop' }
+    ];
+
+    const state = {
+      posture: 'unfolded',
+      dark: false,
+      route: 'chat', // 'chat' | 'creator' | 'skills' | 'settings'
+      foldedSubView: 'master', // 折叠态在双栏页中控制显示 'master' 还是 'detail'
+      sidebarOpen: true,
+      sourcePaneOpen: false,
+      sourcePaneMsgId: null,
+      creatorMode: 'edit',
+      creatorSearch: '',
+      creatorActiveSkillId: 'sk_clean',
+      skillsActiveId: 'sk_clean',
+      settingsCategory: 'personas',
+      editingPersonaId: 'p_arch',
+      activeSessionId: 's1',
+      modelId: 'deepseek-flash',
+      effortIdx: 4,
+      memoryRatio: 0.34,
+      cacheHitRatio: 0.91,
+      compacting: false,
+      streaming: false,
+      streamTimer: null,
+      searchQuery: '',
+      pendingFiles: [],
+      defaultPersonaId: 'p_arch',
+      autoCompactIdle: true,
+      lanEditorOn: false,
+      personas: [
+        {
+          id: 'p_default',
+          name: '默认助手',
+          modelId: 'deepseek-flash',
+          effortIdx: 2,
+          temperature: 0.7,
+          topP: 0.95,
+          maxTurns: 20,
+          prompt: '简洁、直接、中文回答，避免冗余客套。',
+          defaultSkills: ['sk_clean']
+        },
+        {
+          id: 'p_arch',
+          name: '系统架构师',
+          modelId: 'deepseek-v4-pro',
+          effortIdx: 4,
+          temperature: 0.3,
+          topP: 0.9,
+          maxTurns: 30,
+          prompt: '以资深终端系统工程师视角分析架构取舍、性能瓶颈与落地方案。当前日期：{{date}}。',
+          defaultSkills: ['sk_clean', 'sk_mcp']
+        },
+        {
+          id: 'p_paper',
+          name: '技术精读',
+          modelId: 'claude-sonnet',
+          effortIdx: 4,
+          temperature: 0.2,
+          topP: 0.9,
+          maxTurns: 16,
+          prompt: '提炼论文与文档的核心贡献、量化指标与局限性，并保留原始出处。',
+          defaultSkills: ['sk_clean', 'sk_arxiv']
+        }
+      ],
+      skills: [
+        {
+          id: 'sk_clean',
+          name: '联网清洗',
+          tier: '声明式',
+          globalEnabled: true,
+          minScore: 1.5,
+          minAuth: 3,
+          excludeDomains: 'content-farm.example, seo-spam.net',
+          md: `---\nname: 联网清洗\ntier: L1_DECLARATIVE\nmin_rerank_score: 1.5\nmin_authority: 3\n---\n\n# 联网信息清洗规则\n\n1. 检索时附加 \`lang:zh,en\` 与近一年时间范围。\n2. 过滤 \`rerank_score < 1.5\` 或权威度低于 3 的低质站点。\n3. 常规问答优先读取 600–800 字 \`summary\` 节省上下文。`
+        },
+        {
+          id: 'sk_mcp',
+          name: '代码库 MCP',
+          tier: '远程 MCP',
+          globalEnabled: true,
+          minScore: 1.5,
+          minAuth: 3,
+          excludeDomains: '',
+          md: `---\nname: 代码库 MCP\ntier: L2_REMOTE_MCP\nendpoint: https://mcp.local.example/repo\n---\n\n# 本地代码库只读检索\n\n- 仅执行只读搜索与切片读取。\n- 引用代码时附带文件路径与行号。`
+        },
+        {
+          id: 'sk_arxiv',
+          name: '论文精读',
+          tier: '声明式',
+          globalEnabled: true,
+          minScore: 1.8,
+          minAuth: 3,
+          excludeDomains: '',
+          md: `---\nname: 论文精读\ntier: L1_DECLARATIVE\n---\n\n# 学术论文结构化拆解\n\n1. 三句话总结问题定义、核心方法与关键指标。\n2. 列出可复现前提与显存/算力约束。`
+        },
+        {
+          id: 'sk_rss',
+          name: '技术简报汇总',
+          tier: '声明式',
+          globalEnabled: false,
+          minScore: 1.5,
+          minAuth: 2,
+          excludeDomains: '',
+          md: `---\nname: 技术简报汇总\ntier: L1_DECLARATIVE\n---\n\n# 每日技术动态汇总\n\n- 按端侧 AI、系统框架与开源工具三类整理要点。`
+        }
+      ],
+      sessions: [
+        {
+          id: 's1',
+          title: 'Pura X Max 阔折叠适配',
+          time: '刚刚',
+          personaId: 'p_arch',
+          skillOverrides: {},
+          messages: [
+            {
+              id: 'm1',
+              role: 'user',
+              text: '帮我规划 Pura X Max 展开态与折叠态的页面结构，创造室和设置怎么安排最顺手？',
+              attachments: []
+            },
+            {
+              id: 'm2',
+              role: 'assistant',
+              activeBranch: 0,
+              branches: [
+                {
+                  thinkingOpen: false,
+                  steps: [
+                    { kind: 'thought', text: '展开态 7.7″ 阔屏适合全页面复用左右双栏 Master-Detail 结构。' },
+                    { kind: 'search', query: 'HarmonyOS NavigationMode.Auto 阔折叠 双栏规范', count: 3 },
+                    { kind: 'thought', text: '创造室、技能与设置改为独立全页；底部半模态仅留给模型快切与附件上传。' }
+                  ],
+                  sources: [
+                    { title: 'HarmonyOS 阔折叠应用开发指南', site: 'developer.huawei.com', score: '2.7', auth: 4, summary: '推荐使用 NavigationMode.Auto 实现折叠单栏、展开双栏的无缝切换。' },
+                    { title: 'Pura X Max 响应式布局实战', site: 'developer.huawei.com', score: '2.4', auth: 3, summary: '复杂配置页与编辑器应采用左列表右详情，避免底部弹窗拥挤。' },
+                    { title: 'DeepSeek Search & Fetch 清洗规范', site: 'api-docs.deepseek.com', score: '2.2', auth: 4, summary: '按 rerank_score >= 1.5 与 authority >= 3 过滤低质源。' }
+                  ],
+                  text: '建议全站采用统一的 **Master-Detail 双栏页面架构**：\n\n• **创造室 / 技能 / 设置独立全页**：展开态左侧为纵向分类或技能列表，右侧为完整 `SKILL.md` 或参数配置区；折叠态自动切换为列表 → 详情二级页。\n• **底部弹窗只做轻操作**：仅保留给模型与思考滑条、`+` 附件上传、以及折叠态的快速技能/角色切换。\n• **视觉统一**：全站开关与选中胶囊统一品牌蓝，保持克制与一致。'
+                }
+              ]
+            }
+          ]
+        },
+        {
+          id: 's2',
+          title: 'DeepSeek 缓存价差测算',
+          time: '昨天',
+          personaId: 'p_default',
+          skillOverrides: {},
+          messages: [
+            { id: 'm21', role: 'user', text: 'DeepSeek Flash 缓存命中和未命中差多少？', attachments: [] },
+            {
+              id: 'm22',
+              role: 'assistant',
+              activeBranch: 0,
+              branches: [
+                {
+                  thinkingOpen: false,
+                  steps: [{ kind: 'search', query: 'DeepSeek API 定价 缓存命中 2026', count: 1 }],
+                  sources: [
+                    { title: 'DeepSeek 模型与价格（2026）', site: 'api-docs.deepseek.com', score: '2.9', auth: 4, summary: 'deepseek-flash 高峰命中 0.04 元/M，未命中 2.00 元/M；闲时减半。' }
+                  ],
+                  text: '`deepseek-flash` 缓存命中与未命中价差达 **50 倍**，因此仅在缓存自然过期、切换异构模型或超过质量红线时才触发检查点压缩。'
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    };
+
+    const $ = (id) => document.getElementById(id);
+
+    function showToast(msg) {
+      const el = $('appToast');
+      el.textContent = msg;
+      el.classList.remove('hidden');
+      clearTimeout(el._t);
+      el._t = setTimeout(() => el.classList.add('hidden'), 2000);
+    }
+
+    function getActiveSession() {
+      return state.sessions.find((s) => s.id === state.activeSessionId) || state.sessions[0];
+    }
+
+    function getSessionPersona(session) {
+      return state.personas.find((p) => p.id === session.personaId) || state.personas[0];
+    }
+
+    function isSkillActiveInSession(skill, session) {
+      if (!skill.globalEnabled) return false;
+      if (Object.prototype.hasOwnProperty.call(session.skillOverrides, skill.id)) {
+        return session.skillOverrides[skill.id];
+      }
+      return getSessionPersona(session).defaultSkills.includes(skill.id);
+    }
+
+    function toggleSessionSkill(skillId) {
+      const session = getActiveSession();
+      const skill = state.skills.find((s) => s.id === skillId);
+      if (!skill) return;
+      if (!skill.globalEnabled) { showToast(`「${skill.name}」在全局已停用`); return; }
+      session.skillOverrides[skillId] = !isSkillActiveInSession(skill, session);
+      renderAll();
+    }
+
+    function navigateTo(route, subView) {
+      state.route = route;
+      state.foldedSubView = subView || 'master';
+      state.sourcePaneOpen = false;
+      $('mobileDrawerBackdrop').classList.add('hidden');
+      closeSheet();
+      renderAll();
+    }
+
+    function formatMd(text) {
+      return text
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold text-pri">$1</strong>')
+        .replace(/`([^`]+)`/g, '<code class="px-1 py-0.5 rounded surface-2 text-[12px] font-mono">$1</code>')
+        .replace(/\n/g, '<br/>');
+    }
+
+    function applyMasterDetailVisibility(masterId, detailId, backBtnId) {
+      const isUnfolded = state.posture === 'unfolded';
+      const master = $(masterId);
+      const detail = $(detailId);
+      const backBtn = $(backBtnId);
+
+      if (isUnfolded) {
+        master.classList.remove('hidden', 'w-full', 'border-r-0');
+        master.classList.add('border-r');
+        detail.classList.remove('hidden');
+        backBtn.classList.add('hidden');
+        backBtn.classList.remove('flex');
+      } else {
+        const showMaster = state.foldedSubView === 'master';
+        master.classList.toggle('hidden', !showMaster);
+        master.classList.toggle('w-full', showMaster);
+        master.classList.toggle('border-r-0', showMaster);
+        detail.classList.toggle('hidden', showMaster);
+        backBtn.classList.toggle('hidden', showMaster);
+        backBtn.classList.toggle('flex', !showMaster);
+      }
+    }
+
+    function renderPostureAndRoute() {
+      const shell = $('deviceShell');
+      const isUnfolded = state.posture === 'unfolded';
+      shell.classList.toggle('posture-unfolded', isUnfolded);
+      shell.classList.toggle('posture-folded', !isUnfolded);
+
+      $('hingeLine').classList.toggle('hidden', !isUnfolded);
+
+      // 页面路由显隐
+      $('pageChat').classList.toggle('hidden', state.route !== 'chat');
+      $('pageCreator').classList.toggle('hidden', state.route !== 'creator');
+      $('pageSkills').classList.toggle('hidden', state.route !== 'skills');
+      $('pageSettings').classList.toggle('hidden', state.route !== 'settings');
+
+      // 主对话页自适应
+      $('desktopSidebar').classList.toggle('hidden', !isUnfolded || !state.sidebarOpen);
+      $('onDemandSourcePane').classList.toggle('hidden', !isUnfolded || !state.sourcePaneOpen);
+      $('unfoldedSkillBar').classList.toggle('hidden', !isUnfolded);
+
+      const foldSkillBtn = $('btnFoldSkillQuick');
+      foldSkillBtn.classList.toggle('hidden', isUnfolded);
+      foldSkillBtn.classList.toggle('flex', !isUnfolded);
+
+      $('btnMenuTop').classList.toggle('hidden', isUnfolded && state.sidebarOpen);
+      $('btnNewChatTop').classList.toggle('hidden', isUnfolded && state.sidebarOpen);
+
+      // 三个独立页的 Master-Detail 自适应
+      applyMasterDetailVisibility('creatorMaster', 'creatorDetail', 'btnCreatorBackList');
+      applyMasterDetailVisibility('skillsMaster', 'skillsDetail', 'btnSkillsBackList');
+      applyMasterDetailVisibility('settingsMaster', 'settingsDetail', 'btnSettingsBackList');
+
+      $('postureMeta').textContent = isUnfolded
+        ? '展开态 · 7.7″ 阔内屏（全页面 Master-Detail 双栏）'
+        : '折叠态 · 5.4″ 阔外屏（列表 → 详情单栏栈 · 底部仅放快切）';
+      $('statusBreakpoint').textContent = isUnfolded ? 'lg · 双栏' : 'sm · 单栏';
+
+      $('btnFolded').style.background = !isUnfolded ? 'var(--bg-page)' : 'transparent';
+      $('btnFolded').style.color = !isUnfolded ? 'var(--text-primary)' : 'var(--text-secondary)';
+      $('btnUnfolded').style.background = isUnfolded ? 'var(--bg-page)' : 'transparent';
+      $('btnUnfolded').style.color = isUnfolded ? 'var(--text-primary)' : 'var(--text-secondary)';
+
+      if (isUnfolded) $('mobileDrawerBackdrop').classList.add('hidden');
+    }
+
+    function renderChatChrome() {
+      const session = getActiveSession();
+      const model = MODEL_CATALOG.find((m) => m.id === state.modelId) || MODEL_CATALOG[0];
+      const effort = EFFORT_LEVELS[state.effortIdx];
+      const persona = getSessionPersona(session);
+
+      $('capsuleModel').textContent = model.name;
+      $('capsuleThink').textContent = effort.short;
+      $('topPersonaLabel').textContent = persona.name;
+
+      // 展开态技能快捷开关：统一品牌蓝
+      const activeGlobalSkills = state.skills.filter((s) => s.globalEnabled);
+      $('unfoldedSkillBar').innerHTML = activeGlobalSkills.map((sk) => {
+        const on = isSkillActiveInSession(sk, session);
+        return `
+          <button data-quick-skill="${sk.id}" type="button" class="quick-skill-chip h-7 px-2.5 rounded-full text-[11px] font-medium flex items-center gap-1 border transition shrink-0 ${
+            on ? 'brand-pill border-transparent' : 'surface text-sec b-line hover:text-pri'
+          }">
+            <i data-lucide="${on ? 'check' : 'plus'}" class="w-3 h-3"></i>
+            <span>${sk.name}</span>
+          </button>`;
+      }).join('');
+      $('unfoldedSkillBar').querySelectorAll('.quick-skill-chip').forEach((btn) => {
+        btn.addEventListener('click', () => toggleSessionSkill(btn.dataset.quickSkill));
+      });
+
+      const activeCount = activeGlobalSkills.filter((sk) => isSkillActiveInSession(sk, session)).length;
+      const fs = $('btnFoldSkillQuick');
+      fs.style.color = activeCount > 0 ? 'var(--brand)' : 'var(--text-tertiary)';
+      fs.style.background = activeCount > 0 ? 'var(--brand-soft)' : 'transparent';
+
+      // 附件芯片
+      const attWrap = $('pendingAttachments');
+      if (state.pendingFiles.length === 0) {
+        attWrap.classList.add('hidden');
+        attWrap.classList.remove('flex');
+      } else {
+        attWrap.classList.remove('hidden');
+        attWrap.classList.add('flex');
+        attWrap.innerHTML = state.pendingFiles.map((f, idx) => `
+          <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl surface border b-line text-[11px] text-pri">
+            <i data-lucide="${f.icon}" class="w-3 h-3 text-sec"></i>
+            <span class="max-w-[140px] truncate">${f.name}</span>
+            <button data-rm-att="${idx}" type="button" class="rm-att text-ter hover:text-pri"><i data-lucide="x" class="w-3 h-3"></i></button>
+          </span>`).join('');
+        attWrap.querySelectorAll('.rm-att').forEach((b) => {
+          b.addEventListener('click', () => { state.pendingFiles.splice(Number(b.dataset.rmAtt), 1); renderAll(); });
+        });
+      }
+
+      const pct = Math.round(state.memoryRatio * 100);
+      $('simMemoryLabel').textContent = `记忆 ${pct}%`;
+      const showMem = state.compacting || state.memoryRatio >= 0.6;
+      $('memoryWrap').classList.toggle('hidden', !showMem);
+      $('memoryFill').style.width = `${pct}%`;
+      $('memoryFill').style.background = state.memoryRatio >= 0.85 ? 'var(--danger)' : 'var(--warn)';
+      $('memoryPct').textContent = state.compacting ? '整理中' : `${pct}%`;
+      $('memoryBubbleText').textContent = state.compacting
+        ? '正在生成检查点摘要…'
+        : `对话记忆 ${pct}% · 本轮命中 ${Math.round(state.cacheHitRatio * 100)}%`;
+
+      $('btnSend').style.background = state.streaming ? 'var(--danger)' : 'var(--brand)';
+      $('sendIcon').setAttribute('data-lucide', state.streaming ? 'square' : 'arrow-up');
+    }
+
+    function renderSessionLists() {
+      const q = state.searchQuery.trim().toLowerCase();
+      const filtered = state.sessions.filter((s) => !q || s.title.toLowerCase().includes(q));
+      const html = filtered.map((s) => {
+        const active = s.id === state.activeSessionId;
+        return `
+          <button data-sid="${s.id}" type="button" class="session-item w-full text-left px-2.5 py-2 rounded-xl flex items-center justify-between gap-2 transition ${
+            active ? 'surface-2 text-pri font-medium' : 'text-sec hover:surface'
+          }">
+            <span class="text-xs truncate">${s.title}</span>
+            <span class="text-[10px] text-ter shrink-0">${s.time}</span>
+          </button>`;
+      }).join('');
+
+      $('sideSessionList').innerHTML = html || '<div class="text-xs text-ter text-center py-6">无匹配对话</div>';
+      $('drawerSessionList').innerHTML = html || '<div class="text-xs text-ter text-center py-6">暂无对话</div>';
+
+      document.querySelectorAll('.session-item').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          state.activeSessionId = btn.dataset.sid;
+          state.sourcePaneOpen = false;
+          $('mobileDrawerBackdrop').classList.add('hidden');
+          renderAll();
+        });
+      });
+    }
+
+    function renderMessages() {
+      const session = getActiveSession();
+      const container = $('chatStream');
+
+      if (session.messages.length === 0) {
+        container.innerHTML = `
+          <div class="h-full min-h-[260px] flex flex-col items-center justify-center text-center">
+            <div class="w-10 h-10 rounded-2xl flex items-center justify-center text-white font-semibold mb-3 shadow-sm" style="background: var(--brand);">C</div>
+            <div class="text-sm font-medium text-sec">开始一段新对话</div>
+          </div>`;
+        return;
+      }
+
+      container.innerHTML = session.messages.map((m) => {
+        if (m.role === 'user') {
+          const atts = m.attachments && m.attachments.length > 0
+            ? `<div class="flex flex-wrap justify-end gap-1 mb-1.5">${m.attachments.map((a) => `
+                <span class="px-2 py-0.5 rounded-lg surface border b-line text-[11px] text-sec inline-flex items-center gap-1">
+                  <i data-lucide="${a.icon}" class="w-3 h-3"></i>${a.name}
+                </span>`).join('')}</div>`
+            : '';
+          return `
+            <div class="flex flex-col items-end">
+              ${atts}
+              <div class="max-w-[82%] px-3.5 py-2.5 rounded-[20px] rounded-br-md text-[14px] leading-relaxed" style="background: var(--bg-user-bubble); color: var(--text-user-bubble);">
+                ${formatMd(m.text)}
+              </div>
+            </div>`;
+        }
+
+        const br = m.branches[m.activeBranch] || m.branches[0];
+        const hasSteps = br.steps && br.steps.length > 0;
+        const hasSources = br.sources && br.sources.length > 0;
+        const branchCount = m.branches.length;
+
+        return `
+          <div class="space-y-2.5">
+            ${hasSteps ? `
+              <div>
+                <button data-toggle-think="${m.id}" type="button" class="toggle-think h-7 px-2.5 rounded-full surface text-[11px] font-medium text-sec hover:text-pri inline-flex items-center gap-1.5 transition">
+                  <i data-lucide="brain" class="w-3 h-3" style="color: var(--brand);"></i>
+                  <span>${br.streaming ? '思考中…' : `思考过程${hasSources ? ` · ${br.sources.length} 篇` : ''}`}</span>
+                  <i data-lucide="${br.thinkingOpen ? 'chevron-up' : 'chevron-down'}" class="w-3 h-3 text-ter"></i>
+                </button>
+                ${br.thinkingOpen ? `
+                  <div class="mt-2 pl-3 border-l-2 b-line space-y-1.5 py-0.5">
+                    ${br.steps.map((st) => st.kind === 'search'
+                      ? `<div class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md brand-pill text-[11px]">
+                           <i data-lucide="search" class="w-3 h-3"></i>
+                           <span>检索「${st.query}」· ${st.count} 篇</span>
+                         </div>`
+                      : `<div class="text-xs leading-relaxed text-sec">${st.text}</div>`).join('')}
+                  </div>` : ''}
+              </div>` : ''}
+
+            <div class="text-[14.5px] leading-[1.72] text-pri">
+              ${formatMd(br.text)}${br.streaming ? '<span class="inline-block w-1.5 h-4 ml-1 align-middle rounded-sm streaming-dot" style="background: var(--brand);"></span>' : ''}
+            </div>
+
+            ${!br.streaming ? `
+              <div class="flex flex-wrap items-center justify-between gap-2 pt-0.5">
+                <div class="flex items-center gap-1 text-ter">
+                  <button data-copy-msg="${m.id}" type="button" class="copy-msg p-1.5 rounded-lg hover:surface hover:text-pri transition" title="复制">
+                    <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+                  </button>
+                  <button data-retry-msg="${m.id}" type="button" class="retry-msg p-1.5 rounded-lg hover:surface hover:text-pri transition" title="重试">
+                    <i data-lucide="rotate-cw" class="w-3.5 h-3.5"></i>
+                  </button>
+                  ${branchCount > 1 ? `
+                    <div class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-lg surface text-[11px] font-mono text-sec">
+                      <button data-prev-br="${m.id}" type="button" class="prev-br p-0.5 hover:text-pri"><i data-lucide="chevron-left" class="w-3 h-3"></i></button>
+                      <span>${m.activeBranch + 1}/${branchCount}</span>
+                      <button data-next-br="${m.id}" type="button" class="next-br p-0.5 hover:text-pri"><i data-lucide="chevron-right" class="w-3 h-3"></i></button>
+                    </div>` : ''}
+                </div>
+
+                ${hasSources ? `
+                  <button data-open-sources="${m.id}" type="button" class="open-sources h-6 px-2.5 rounded-full surface border b-line text-[11px] font-medium text-sec hover:text-pri inline-flex items-center gap-1.5 transition">
+                    <i data-lucide="globe" class="w-3 h-3" style="color: var(--brand);"></i>
+                    <span>来源 · ${br.sources.length}</span>
+                  </button>` : ''}
+              </div>` : ''}
+          </div>`;
+      }).join('');
+
+      container.querySelectorAll('.toggle-think').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const msg = session.messages.find((x) => x.id === btn.dataset.toggleThink);
+          if (msg) { msg.branches[msg.activeBranch].thinkingOpen = !msg.branches[msg.activeBranch].thinkingOpen; renderAll(); }
+        });
+      });
+      container.querySelectorAll('.copy-msg').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const msg = session.messages.find((x) => x.id === btn.dataset.copyMsg);
+          if (msg) copyToClipboard(msg.branches[msg.activeBranch].text, '已复制');
+        });
+      });
+      container.querySelectorAll('.retry-msg').forEach((btn) => btn.addEventListener('click', () => retryMessage(btn.dataset.retryMsg)));
+      container.querySelectorAll('.prev-br').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const msg = session.messages.find((x) => x.id === btn.dataset.prevBr);
+          if (msg && msg.activeBranch > 0) { msg.activeBranch--; renderAll(); }
+        });
+      });
+      container.querySelectorAll('.next-br').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const msg = session.messages.find((x) => x.id === btn.dataset.nextBr);
+          if (msg && msg.activeBranch < msg.branches.length - 1) { msg.activeBranch++; renderAll(); }
+        });
+      });
+      container.querySelectorAll('.open-sources').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          state.sourcePaneMsgId = btn.dataset.openSources;
+          if (state.posture === 'unfolded') { state.sourcePaneOpen = true; renderAll(); }
+          else { openSheet('sources'); }
+        });
+      });
+    }
+
+    function retryMessage(msgId) {
+      if (state.streaming) return;
+      const session = getActiveSession();
+      const msg = session.messages.find((x) => x.id === msgId);
+      if (!msg || msg.role !== 'assistant') return;
+
+      const model = MODEL_CATALOG.find((m) => m.id === state.modelId) || MODEL_CATALOG[0];
+      const nextIdx = msg.branches.length + 1;
+      const newBranch = {
+        thinkingOpen: false,
+        steps: state.effortIdx > 0 ? [{ kind: 'thought', text: `重新组织回答（第 ${nextIdx} 版）。` }] : [],
+        sources: msg.branches[0].sources || [],
+        text: '',
+        streaming: true
+      };
+      msg.branches.push(newBranch);
+      msg.activeBranch = msg.branches.length - 1;
+      state.streaming = true;
+      renderAll();
+
+      const fullText = `第 **${nextIdx}** 版回答（${model.name}）：\n\n• 展开态全部复杂页面采用左列表右详情双栏，保持与主页完全一致的空间秩序。\n• 点击下方 \`< ${nextIdx}/${msg.branches.length} >\` 可随时回看上一版。`;
+      let idx = 0;
+      state.streamTimer = setInterval(() => {
+        idx += 6;
+        newBranch.text = fullText.slice(0, idx);
+        if (idx >= fullText.length) {
+          clearInterval(state.streamTimer);
+          newBranch.text = fullText;
+          newBranch.streaming = false;
+          state.streaming = false;
+        }
+        renderMessages();
+        renderChatChrome();
+        lucide.createIcons();
+      }, 30);
+    }
+
+    function buildSourcesListHtml(msgId) {
+      const session = getActiveSession();
+      let target = session.messages.find((m) => m.id === msgId);
+      if (!target) {
+        for (let i = session.messages.length - 1; i >= 0; i--) {
+          if (session.messages[i].role === 'assistant') { target = session.messages[i]; break; }
+        }
+      }
+      const list = target ? (target.branches[target.activeBranch].sources || []) : [];
+      if (list.length === 0) return '<div class="text-xs text-ter py-8 text-center">暂无信源</div>';
+      return `<div class="space-y-2.5">${list.map((src) => `
+        <div class="p-3 rounded-2xl surface border b-line space-y-1.5">
+          <div class="flex items-start justify-between gap-2">
+            <div class="text-xs font-semibold text-pri leading-snug">${src.title}</div>
+            <span class="px-1.5 py-0.5 rounded-md brand-pill text-[10px] font-mono shrink-0">${src.score}</span>
+          </div>
+          <div class="flex items-center gap-2 text-[10px] text-ter font-mono">
+            <span>${src.site}</span><span>·</span><span>权威 ${src.auth}/4</span>
+          </div>
+          <div class="text-[11.5px] text-sec leading-relaxed">${src.summary}</div>
+        </div>`).join('')}</div>`;
+    }
+
+    // ==================== PAGE 2: 创造室渲染 ====================
+    function renderCreatorPage() {
+      if (state.route !== 'creator') return;
+      const q = state.creatorSearch.trim().toLowerCase();
+      const list = state.skills.filter((s) => !q || s.name.toLowerCase().includes(q));
+      $('creatorSkillList').innerHTML = list.map((sk) => {
+        const active = sk.id === state.creatorActiveSkillId;
+        return `
+          <button data-cskill="${sk.id}" type="button" class="cskill-row w-full text-left px-3 py-2.5 rounded-xl flex items-center justify-between gap-2 transition ${
+            active ? 'brand-pill font-medium' : 'text-pri hover:surface'
+          }">
+            <div class="min-w-0">
+              <div class="text-xs truncate">${sk.name}</div>
+              <div class="text-[10px] opacity-70 mt-0.5">${sk.tier}</div>
+            </div>
+            <i data-lucide="chevron-right" class="w-3.5 h-3.5 opacity-50 shrink-0"></i>
+          </button>`;
+      }).join('');
+
+      $('creatorSkillList').querySelectorAll('.cskill-row').forEach((b) => {
+        b.addEventListener('click', () => {
+          state.creatorActiveSkillId = b.dataset.cskill;
+          state.foldedSubView = 'detail';
+          $('creatorDryRunBanner').classList.add('hidden');
+          renderAll();
+        });
+      });
+
+      const activeSk = state.skills.find((s) => s.id === state.creatorActiveSkillId) || state.skills[0];
+      $('creatorActiveTitle').textContent = activeSk.name;
+      $('skillMdEditor').value = activeSk.md;
+
+      const isEdit = state.creatorMode === 'edit';
+      $('skillMdEditor').classList.toggle('hidden', !isEdit);
+      $('skillMdPreview').classList.toggle('hidden', isEdit);
+      $('btnMdEdit').style.background = isEdit ? 'var(--bg-page)' : 'transparent';
+      $('btnMdEdit').style.color = isEdit ? 'var(--text-primary)' : 'var(--text-secondary)';
+      $('btnMdPreview').style.background = !isEdit ? 'var(--bg-page)' : 'transparent';
+      $('btnMdPreview').style.color = !isEdit ? 'var(--text-primary)' : 'var(--text-secondary)';
+
+      if (!isEdit) {
+        $('skillMdPreview').innerHTML = activeSk.md
+          .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+          .replace(/^# (.+)$/gm, '<div class="text-sm font-semibold text-pri pt-1">$1</div>')
+          .replace(/^---[\s\S]*?---/m, (m) => `<pre class="p-2.5 rounded-xl bg-page border b-line font-mono text-[11px] text-sec">${m}</pre>`)
+          .replace(/`([^`]+)`/g, '<code class="px-1 py-0.5 rounded surface-2 font-mono text-[11px]">$1</code>')
+          .replace(/\n/g, '<br/>');
+      }
+    }
+
+    // ==================== PAGE 3: 技能管理渲染 ====================
+    function renderSkillsPage() {
+      if (state.route !== 'skills') return;
+      $('skillsMasterList').innerHTML = state.skills.map((sk) => {
+        const active = sk.id === state.skillsActiveId;
+        return `
+          <div data-skrow="${sk.id}" class="sk-master-row px-3 py-2.5 rounded-xl flex items-center justify-between gap-2 cursor-pointer transition ${
+            active ? 'surface-2 font-medium' : 'hover:surface'
+          }">
+            <div class="min-w-0">
+              <div class="text-xs text-pri truncate">${sk.name}</div>
+              <div class="text-[10px] text-ter mt-0.5">${sk.tier}</div>
+            </div>
+            <button data-gsk="${sk.id}" type="button" class="gsk-toggle w-9 h-5 rounded-full p-0.5 transition flex items-center shrink-0" style="background: ${sk.globalEnabled ? 'var(--brand)' : 'var(--bg-surface-2)'}; justify-content: ${sk.globalEnabled ? 'flex-end' : 'flex-start'};">
+              <span class="w-4 h-4 rounded-full bg-white shadow-sm block"></span>
+            </button>
+          </div>`;
+      }).join('');
+
+      $('skillsMasterList').querySelectorAll('.sk-master-row').forEach((row) => {
+        row.addEventListener('click', (e) => {
+          if (e.target.closest('.gsk-toggle')) return;
+          state.skillsActiveId = row.dataset.skrow;
+          state.foldedSubView = 'detail';
+          renderAll();
+        });
+      });
+
+      $('skillsMasterList').querySelectorAll('.gsk-toggle').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const sk = state.skills.find((x) => x.id === btn.dataset.gsk);
+          if (sk) { sk.globalEnabled = !sk.globalEnabled; renderAll(); }
+        });
+      });
+
+      const activeSk = state.skills.find((s) => s.id === state.skillsActiveId) || state.skills[0];
+      $('skillsDetailTitle').textContent = activeSk.name;
+      $('skillsDetailBody').innerHTML = `
+        <div class="max-w-lg space-y-4">
+          <div class="p-3.5 rounded-2xl surface border b-line flex items-center justify-between">
+            <div>
+              <div class="text-xs font-semibold text-pri">全局启用</div>
+              <div class="text-[11px] text-ter mt-0.5">${activeSk.tier}</div>
+            </div>
+            <button id="btnDetailSkillToggle" type="button" class="w-10 h-6 rounded-full p-0.5 transition flex items-center" style="background: ${activeSk.globalEnabled ? 'var(--brand)' : 'var(--bg-surface-2)'}; justify-content: ${activeSk.globalEnabled ? 'flex-end' : 'flex-start'};">
+              <span class="w-5 h-5 rounded-full bg-white shadow-sm block"></span>
+            </button>
+          </div>
+
+          <div class="p-3.5 rounded-2xl surface border b-line space-y-3.5">
+            <div class="space-y-1.5">
+              <div class="flex justify-between text-xs"><span class="text-sec">质量分阈值</span><span id="skScoreVal" class="font-mono text-pri">${activeSk.minScore.toFixed(1)}</span></div>
+              <input id="skScoreSlider" type="range" min="0.5" max="2.5" step="0.1" value="${activeSk.minScore}" class="app-slider" />
+            </div>
+            <div class="space-y-1.5">
+              <div class="flex justify-between text-xs"><span class="text-sec">最低权威度</span><span id="skAuthVal" class="font-mono text-pri">${activeSk.minAuth}</span></div>
+              <input id="skAuthSlider" type="range" min="0" max="4" step="1" value="${activeSk.minAuth}" class="app-slider" />
+            </div>
+            <div class="space-y-1.5">
+              <div class="text-xs text-sec">排除域名</div>
+              <input id="skExcludeInput" type="text" value="${activeSk.excludeDomains}" placeholder="逗号分隔域名" class="w-full px-3 py-2 rounded-xl bg-page border b-line text-xs text-pri outline-none" />
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <button id="btnSkillRollback" type="button" class="px-3.5 py-2 rounded-xl surface border b-line text-xs font-medium text-sec hover:text-pri">回滚上一版</button>
+            <button id="btnSkillSaveParams" type="button" class="px-4 py-2 rounded-xl text-xs font-medium text-white" style="background: var(--brand);">保存参数</button>
+          </div>
+        </div>`;
+
+      $('btnDetailSkillToggle').addEventListener('click', () => { activeSk.globalEnabled = !activeSk.globalEnabled; renderAll(); });
+      $('skScoreSlider').addEventListener('input', (e) => { activeSk.minScore = Number(e.target.value); $('skScoreVal').textContent = activeSk.minScore.toFixed(1); });
+      $('skAuthSlider').addEventListener('input', (e) => { activeSk.minAuth = Number(e.target.value); $('skAuthVal').textContent = String(activeSk.minAuth); });
+      $('skExcludeInput').addEventListener('input', (e) => { activeSk.excludeDomains = e.target.value; });
+      $('btnSkillRollback').addEventListener('click', () => showToast('已回滚至上一版本'));
+      $('btnSkillSaveParams').addEventListener('click', () => showToast('技能参数已保存'));
+    }
+
+    // ==================== PAGE 4: 设置中心（含 Cherry Studio 级角色与提示词配置） ====================
+    function renderSettingsPage() {
+      if (state.route !== 'settings') return;
+      $('settingsCategoryList').innerHTML = SETTINGS_CATEGORIES.map((c) => {
+        const active = c.id === state.settingsCategory;
+        return `
+          <button data-scat="${c.id}" type="button" class="scat-btn w-full px-3 py-2.5 rounded-xl flex items-center gap-2.5 text-xs font-medium transition ${
+            active ? 'brand-pill' : 'text-sec hover:surface hover:text-pri'
+          }">
+            <i data-lucide="${c.icon}" class="w-4 h-4 shrink-0"></i>
+            <span>${c.label}</span>
+          </button>`;
+      }).join('');
+
+      $('settingsCategoryList').querySelectorAll('.scat-btn').forEach((b) => {
+        b.addEventListener('click', () => {
+          state.settingsCategory = b.dataset.scat;
+          state.foldedSubView = 'detail';
+          renderAll();
+        });
+      });
+
+      const cat = SETTINGS_CATEGORIES.find((c) => c.id === state.settingsCategory) || SETTINGS_CATEGORIES[0];
+      $('settingsDetailTitle').textContent = cat.label;
+      $('settingsDetailActions').innerHTML = '';
+      const body = $('settingsDetailBody');
+
+      if (state.settingsCategory === 'personas') {
+        const p = state.personas.find((x) => x.id === state.editingPersonaId) || state.personas[0];
+        $('settingsDetailActions').innerHTML = `
+          <button id="btnAddPersonaFull" type="button" class="h-7 px-2.5 rounded-lg text-xs font-medium text-white flex items-center gap-1" style="background: var(--brand);">
+            <i data-lucide="plus" class="w-3.5 h-3.5"></i><span>新建角色</span>
+          </button>`;
+
+        body.innerHTML = `
+          <div class="max-w-xl space-y-4">
+            <!-- 角色选择器 -->
+            <div class="flex items-center gap-1.5 overflow-x-auto thin-scroll pb-1">
+              ${state.personas.map((item) => `
+                <button data-edit-pid="${item.id}" type="button" class="edit-pid-btn h-8 px-3 rounded-xl text-xs font-medium border transition shrink-0 flex items-center gap-1.5 ${
+                  item.id === p.id ? 'brand-pill border-transparent' : 'surface text-sec b-line hover:text-pri'
+                }">
+                  <span>${item.name}</span>
+                  ${state.defaultPersonaId === item.id ? '<span class="w-1.5 h-1.5 rounded-full" style="background: var(--brand);"></span>' : ''}
+                </button>`).join('')}
+            </div>
+
+            <!-- 基础信息 + 设为默认 -->
+            <div class="p-3.5 rounded-2xl surface border b-line space-y-3">
+              <div class="flex items-center gap-2">
+                <input id="pNameInput" type="text" value="${p.name}" placeholder="角色名称" class="flex-1 px-3 py-2 rounded-xl bg-page border b-line text-xs font-medium text-pri outline-none" />
+                <button id="btnSetDefaultP" type="button" class="h-8 px-3 rounded-xl text-xs font-medium border transition shrink-0 ${
+                  state.defaultPersonaId === p.id ? 'brand-pill border-transparent' : 'bg-page text-sec b-line'
+                }">${state.defaultPersonaId === p.id ? '默认角色' : '设为默认'}</button>
+              </div>
+
+              <!-- 系统提示词 + 变量芯片 -->
+              <div class="space-y-1.5">
+                <div class="flex items-center justify-between">
+                  <span class="text-xs font-medium text-sec">系统提示词</span>
+                  <div class="flex items-center gap-1">
+                    <button data-ins-var="{{date}}" type="button" class="ins-var px-2 py-0.5 rounded-md bg-page border b-line font-mono text-[10px] text-sec hover:text-pri">{{date}}</button>
+                    <button data-ins-var="{{clipboard}}" type="button" class="ins-var px-2 py-0.5 rounded-md bg-page border b-line font-mono text-[10px] text-sec hover:text-pri">{{clipboard}}</button>
+                  </div>
+                </div>
+                <textarea id="pPromptInput" rows="4" class="w-full p-3 rounded-xl bg-page border b-line text-xs leading-relaxed text-pri outline-none resize-none thin-scroll">${p.prompt}</textarea>
+              </div>
+            </div>
+
+            <!-- 模型与精细采样参数（Cherry Studio 风格） -->
+            <div class="p-3.5 rounded-2xl surface border b-line space-y-3.5">
+              <div class="grid grid-cols-2 gap-2.5">
+                <div class="space-y-1">
+                  <div class="text-[11px] text-sec">默认模型</div>
+                  <select id="pModelSelect" class="w-full h-8 px-2.5 rounded-xl bg-page border b-line text-xs text-pri outline-none">
+                    ${MODEL_CATALOG.map((m) => `<option value="${m.id}" ${m.id === p.modelId ? 'selected' : ''}>${m.name}</option>`).join('')}
+                  </select>
+                </div>
+                <div class="space-y-1">
+                  <div class="flex justify-between text-[11px]"><span class="text-sec">默认思考</span><span id="pEffortVal" class="font-mono text-pri">${EFFORT_LEVELS[p.effortIdx].short}</span></div>
+                  <div class="h-8 flex items-center"><input id="pEffortSlider" type="range" min="0" max="5" step="1" value="${p.effortIdx}" class="app-slider" /></div>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-2 gap-3">
+                <div class="space-y-1">
+                  <div class="flex justify-between text-[11px]"><span class="text-sec">Temperature</span><span id="pTempVal" class="font-mono text-pri">${p.temperature.toFixed(1)}</span></div>
+                  <input id="pTempSlider" type="range" min="0" max="2" step="0.1" value="${p.temperature}" class="app-slider" />
+                </div>
+                <div class="space-y-1">
+                  <div class="flex justify-between text-[11px]"><span class="text-sec">Top-P</span><span id="pTopPVal" class="font-mono text-pri">${p.topP.toFixed(2)}</span></div>
+                  <input id="pTopPSlider" type="range" min="0.1" max="1" step="0.05" value="${p.topP}" class="app-slider" />
+                </div>
+              </div>
+
+              <div class="space-y-1">
+                <div class="flex justify-between text-[11px]"><span class="text-sec">上下文携带轮数</span><span id="pTurnsVal" class="font-mono text-pri">${p.maxTurns} 轮</span></div>
+                <input id="pTurnsSlider" type="range" min="4" max="50" step="2" value="${p.maxTurns}" class="app-slider" />
+              </div>
+            </div>
+
+            <!-- 角色默认绑定技能（统一品牌蓝） -->
+            <div class="p-3.5 rounded-2xl surface border b-line space-y-2.5">
+              <div class="text-xs font-medium text-sec">默认绑定技能</div>
+              <div class="flex flex-wrap gap-1.5">
+                ${state.skills.map((sk) => {
+                  const bound = p.defaultSkills.includes(sk.id);
+                  return `
+                    <button data-bind-sk="${sk.id}" type="button" class="bind-sk-btn h-7 px-2.5 rounded-full text-xs font-medium border transition flex items-center gap-1 ${
+                      bound ? 'brand-pill border-transparent' : 'bg-page text-sec b-line'
+                    }">
+                      <i data-lucide="${bound ? 'check' : 'plus'}" class="w-3 h-3"></i>
+                      <span>${sk.name}</span>
+                    </button>`;
+                }).join('')}
+              </div>
+            </div>
+
+            <div class="flex items-center justify-between pt-1">
+              ${state.personas.length > 1 ? `<button id="btnDeleteP" type="button" class="px-3 py-2 rounded-xl text-xs font-medium" style="color: var(--danger);">删除角色</button>` : '<span></span>'}
+              <button id="btnSaveP" type="button" class="px-4 py-2 rounded-xl text-xs font-medium text-white" style="background: var(--brand);">保存角色</button>
+            </div>
+          </div>`;
+
+        $('btnAddPersonaFull').addEventListener('click', () => {
+          const id = 'p_' + Date.now();
+          state.personas.push({
+            id, name: '新角色', modelId: 'deepseek-flash', effortIdx: 3, temperature: 0.7, topP: 0.95, maxTurns: 20, prompt: '', defaultSkills: ['sk_clean']
+          });
+          state.editingPersonaId = id;
+          renderAll();
+        });
+
+        body.querySelectorAll('.edit-pid-btn').forEach((b) => {
+          b.addEventListener('click', () => { state.editingPersonaId = b.dataset.editPid; renderAll(); });
+        });
+        $('pNameInput').addEventListener('input', (e) => { p.name = e.target.value; });
+        $('pPromptInput').addEventListener('input', (e) => { p.prompt = e.target.value; });
+        body.querySelectorAll('.ins-var').forEach((b) => {
+          b.addEventListener('click', () => {
+            p.prompt = (p.prompt ? p.prompt + ' ' : '') + b.dataset.insVar;
+            $('pPromptInput').value = p.prompt;
+          });
+        });
+        $('btnSetDefaultP').addEventListener('click', () => { state.defaultPersonaId = p.id; renderAll(); showToast('已设为新对话默认角色'); });
+        $('pModelSelect').addEventListener('change', (e) => { p.modelId = e.target.value; });
+        $('pEffortSlider').addEventListener('input', (e) => { p.effortIdx = Number(e.target.value); $('pEffortVal').textContent = EFFORT_LEVELS[p.effortIdx].short; });
+        $('pTempSlider').addEventListener('input', (e) => { p.temperature = Number(e.target.value); $('pTempVal').textContent = p.temperature.toFixed(1); });
+        $('pTopPSlider').addEventListener('input', (e) => { p.topP = Number(e.target.value); $('pTopPVal').textContent = p.topP.toFixed(2); });
+        $('pTurnsSlider').addEventListener('input', (e) => { p.maxTurns = Number(e.target.value); $('pTurnsVal').textContent = `${p.maxTurns} 轮`; });
+        body.querySelectorAll('.bind-sk-btn').forEach((b) => {
+          b.addEventListener('click', () => {
+            const sid = b.dataset.bindSk;
+            const i = p.defaultSkills.indexOf(sid);
+            if (i >= 0) p.defaultSkills.splice(i, 1); else p.defaultSkills.push(sid);
+            renderAll();
+          });
+        });
+        const delBtn = body.querySelector('#btnDeleteP');
+        if (delBtn) {
+          delBtn.addEventListener('click', () => {
+            state.personas = state.personas.filter((x) => x.id !== p.id);
+            state.editingPersonaId = state.personas[0].id;
+            if (state.defaultPersonaId === p.id) state.defaultPersonaId = state.personas[0].id;
+            renderAll();
+            showToast('已删除角色');
+          });
+        }
+        $('btnSaveP').addEventListener('click', () => { renderAll(); showToast(`已保存「${p.name}」`); });
+
+      } else if (state.settingsCategory === 'models') {
+        body.innerHTML = `
+          <div class="max-w-lg space-y-3">
+            ${[
+              ['DeepSeek', 'https://api.deepseek.com', '已加密保存'],
+              ['Anthropic', 'https://api.anthropic.com', '已加密保存'],
+              ['OpenAI 兼容', 'https://api.openai.com/v1', '未配置']
+            ].map(([name, url, st]) => `
+              <div class="p-3.5 rounded-2xl surface border b-line space-y-2">
+                <div class="flex items-center justify-between">
+                  <span class="text-xs font-semibold text-pri">${name}</span>
+                  <span class="text-[11px] font-medium ${st === '未配置' ? 'text-ter' : ''}" style="${st !== '未配置' ? 'color: var(--brand);' : ''}">${st}</span>
+                </div>
+                <input type="text" value="${url}" class="w-full px-3 py-1.5 rounded-xl bg-page border b-line text-xs font-mono text-sec outline-none" />
+                <input type="password" value="${st === '未配置' ? '' : 'sk-••••••••••••'}" placeholder="API Key" class="w-full px-3 py-1.5 rounded-xl bg-page border b-line text-xs font-mono text-pri outline-none" />
+              </div>`).join('')}
+          </div>`;
+
+      } else if (state.settingsCategory === 'memory') {
+        body.innerHTML = `
+          <div class="max-w-lg space-y-3">
+            <div class="p-3.5 rounded-2xl surface border b-line flex items-center justify-between">
+              <span class="text-xs font-medium text-pri">缓存过期自动整理</span>
+              <button id="btnToggleAutoCompact" type="button" class="w-10 h-6 rounded-full p-0.5 transition flex items-center" style="background: ${state.autoCompactIdle ? 'var(--brand)' : 'var(--bg-surface-2)'}; justify-content: ${state.autoCompactIdle ? 'flex-end' : 'flex-start'};">
+                <span class="w-5 h-5 rounded-full bg-white shadow-sm block"></span>
+              </button>
+            </div>
+            <div class="p-3.5 rounded-2xl surface border b-line flex items-center justify-between">
+              <span class="text-xs font-medium text-pri">切换模型时自动整理</span>
+              <span class="text-xs font-medium" style="color: var(--brand);">已开启</span>
+            </div>
+          </div>`;
+        $('btnToggleAutoCompact').addEventListener('click', () => { state.autoCompactIdle = !state.autoCompactIdle; renderAll(); });
+
+      } else {
+        body.innerHTML = `
+          <div class="max-w-lg space-y-3">
+            <div class="p-3.5 rounded-2xl surface border b-line flex items-center justify-between">
+              <div>
+                <div class="text-xs font-medium text-pri">电脑局域网编辑</div>
+                ${state.lanEditorOn ? '<div class="text-[11px] font-mono mt-0.5" style="color: var(--brand);">http://192.168.1.24:8765</div>' : ''}
+              </div>
+              <button id="btnToggleLan" type="button" class="w-10 h-6 rounded-full p-0.5 transition flex items-center" style="background: ${state.lanEditorOn ? 'var(--brand)' : 'var(--bg-surface-2)'}; justify-content: ${state.lanEditorOn ? 'flex-end' : 'flex-start'};">
+                <span class="w-5 h-5 rounded-full bg-white shadow-sm block"></span>
+              </button>
+            </div>
+            <div class="p-3.5 rounded-2xl surface border b-line flex items-center justify-between">
+              <span class="text-xs font-medium text-pri">对话历史导入 / 导出</span>
+              <button id="btnExportZip" type="button" class="px-3 py-1.5 rounded-lg bg-page border b-line text-xs font-medium text-pri">导出 ZIP</button>
+            </div>
+          </div>`;
+        $('btnToggleLan').addEventListener('click', () => { state.lanEditorOn = !state.lanEditorOn; renderAll(); });
+        $('btnExportZip').addEventListener('click', () => showToast('已导出 ZIP 备份'));
+      }
+    }
+
+    // ==================== 轻量半模态（仅用于快切） ====================
+    function openSheet(mode) {
+      const titleMap = {
+        model: '模型与思考',
+        attach: '添加附件',
+        sessionPersona: '切换对话角色',
+        sessionSkills: '本对话技能',
+        sources: '本轮信源'
+      };
+      $('sheetTitle').textContent = titleMap[mode] || '';
+      const body = $('sheetBody');
+
+      if (mode === 'model') {
+        const curEffort = EFFORT_LEVELS[state.effortIdx];
+        body.innerHTML = `
+          <div class="space-y-4">
+            <div class="space-y-1.5">
+              ${MODEL_CATALOG.map((m) => `
+                <button data-pick-model="${m.id}" type="button" class="pick-model w-full px-3 py-2.5 rounded-xl border flex items-center justify-between transition ${
+                  state.modelId === m.id ? 'brand-pill border-transparent' : 'surface text-pri b-line'
+                }">
+                  <span class="text-xs font-semibold">${m.name}</span>
+                  <span class="text-[11px] font-mono opacity-75">${m.vendor}</span>
+                </button>`).join('')}
+            </div>
+
+            <div class="p-3.5 rounded-2xl surface border b-line space-y-3">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-pri">思考强度</span>
+                <span id="sliderEffortReadout" class="text-xs font-mono font-medium" style="color: var(--brand);">${curEffort.short}</span>
+              </div>
+              <input id="effortSlider" type="range" min="0" max="5" step="1" value="${state.effortIdx}" class="app-slider" />
+              <div class="flex justify-between text-[10px] font-mono text-ter">
+                <span>关闭</span><span>Min</span><span>Low</span><span>Med</span><span>High</span><span>xHigh</span>
+              </div>
+            </div>
+          </div>`;
+        body.querySelectorAll('.pick-model').forEach((b) => {
+          b.addEventListener('click', () => { state.modelId = b.dataset.pickModel; renderAll(); openSheet('model'); });
+        });
+        body.querySelector('#effortSlider').addEventListener('input', (e) => {
+          state.effortIdx = Number(e.target.value);
+          body.querySelector('#sliderEffortReadout').textContent = EFFORT_LEVELS[state.effortIdx].short;
+          renderChatChrome();
+        });
+
+      } else if (mode === 'attach') {
+        const items = [
+          { icon: 'image', label: '相册图片', sample: { icon: 'image', name: 'PuraXMax_UI.png' } },
+          { icon: 'file-text', label: 'PDF / 文档', sample: { icon: 'file-text', name: 'HarmonyOS_断点规范.pdf' } },
+          { icon: 'link-2', label: '网页链接', sample: { icon: 'link-2', name: 'api-docs.deepseek.com/...' } },
+          { icon: 'camera', label: '拍照识图', sample: { icon: 'camera', name: '白板草图.jpg' } }
+        ];
+        body.innerHTML = `
+          <div class="grid grid-cols-2 gap-2.5">
+            ${items.map((it, i) => `
+              <button data-att-idx="${i}" type="button" class="pick-att p-3.5 rounded-2xl surface border b-line flex items-center gap-2.5 hover:border-[var(--brand)] transition">
+                <div class="w-9 h-9 rounded-xl brand-pill flex items-center justify-center shrink-0">
+                  <i data-lucide="${it.icon}" class="w-4 h-4"></i>
+                </div>
+                <span class="text-xs font-medium text-pri">${it.label}</span>
+              </button>`).join('')}
+          </div>`;
+        body.querySelectorAll('.pick-att').forEach((b) => {
+          b.addEventListener('click', () => {
+            const sample = items[Number(b.dataset.attIdx)].sample;
+            state.pendingFiles.push(sample);
+            closeSheet();
+            renderAll();
+            showToast(`已附加 ${sample.name}`);
+          });
+        });
+
+      } else if (mode === 'sessionPersona') {
+        const session = getActiveSession();
+        body.innerHTML = `
+          <div class="space-y-2">
+            ${state.personas.map((p) => `
+              <button data-pick-p="${p.id}" type="button" class="pick-p w-full px-3.5 py-2.5 rounded-xl border text-left transition flex items-center justify-between ${
+                session.personaId === p.id ? 'brand-pill border-transparent' : 'surface text-pri b-line'
+              }">
+                <span class="text-xs font-semibold">${p.name}</span>
+                ${session.personaId === p.id ? '<i data-lucide="check" class="w-3.5 h-3.5"></i>' : ''}
+              </button>`).join('')}
+            <button id="btnGoPersonaSettings" type="button" class="w-full py-2.5 rounded-xl surface-2 text-xs font-medium text-sec hover:text-pri">定制角色与提示词</button>
+          </div>`;
+        body.querySelectorAll('.pick-p').forEach((b) => {
+          b.addEventListener('click', () => {
+            session.personaId = b.dataset.pickP;
+            session.skillOverrides = {};
+            closeSheet();
+            renderAll();
+          });
+        });
+        body.querySelector('#btnGoPersonaSettings').addEventListener('click', () => {
+          state.settingsCategory = 'personas';
+          navigateTo('settings', 'detail');
+        });
+
+      } else if (mode === 'sessionSkills') {
+        const session = getActiveSession();
+        body.innerHTML = `
+          <div class="space-y-2">
+            ${state.skills.map((sk) => {
+              const on = isSkillActiveInSession(sk, session);
+              return `
+                <div class="p-3 rounded-xl surface border b-line flex items-center justify-between gap-2">
+                  <span class="text-xs font-medium text-pri">${sk.name}</span>
+                  <button data-toggle-ssk="${sk.id}" type="button" class="toggle-ssk w-10 h-6 rounded-full p-0.5 transition flex items-center" style="background: ${on ? 'var(--brand)' : 'var(--bg-surface-2)'}; justify-content: ${on ? 'flex-end' : 'flex-start'};">
+                    <span class="w-5 h-5 rounded-full bg-white shadow-sm block"></span>
+                  </button>
+                </div>`;
+            }).join('')}
+          </div>`;
+        body.querySelectorAll('.toggle-ssk').forEach((b) => {
+          b.addEventListener('click', () => { toggleSessionSkill(b.dataset.toggleSsk); openSheet('sessionSkills'); });
+        });
+
+      } else if (mode === 'sources') {
+        body.innerHTML = buildSourcesListHtml(state.sourcePaneMsgId);
+      }
+
+      $('sheetBackdrop').classList.remove('hidden');
+      lucide.createIcons();
+    }
+
+    function closeSheet() {
+      $('sheetBackdrop').classList.add('hidden');
+    }
+
+    function sendMessage() {
+      if (state.streaming) {
+        clearInterval(state.streamTimer);
+        state.streaming = false;
+        const s = getActiveSession();
+        const last = s.messages[s.messages.length - 1];
+        if (last && last.role === 'assistant') last.branches[last.activeBranch].streaming = false;
+        renderAll();
+        return;
+      }
+
+      const input = $('chatInput');
+      const text = input.value.trim();
+      if (!text && state.pendingFiles.length === 0) return;
+
+      const sendText = text || '请分析这份附件的核心内容。';
+      const atts = state.pendingFiles.slice();
+      input.value = '';
+      input.style.height = 'auto';
+      state.pendingFiles = [];
+
+      const session = getActiveSession();
+      if (session.messages.length === 0) { session.title = sendText.slice(0, 14); session.time = '刚刚'; }
+      session.messages.push({ id: 'u_' + Date.now(), role: 'user', text: sendText, attachments: atts });
+
+      const cleanSkill = state.skills.find((s) => s.id === 'sk_clean');
+      const webOn = cleanSkill && isSkillActiveInSession(cleanSkill, session);
+      const model = MODEL_CATALOG.find((m) => m.id === state.modelId) || MODEL_CATALOG[0];
+      const persona = getSessionPersona(session);
+
+      const steps = [];
+      if (state.effortIdx > 0) steps.push({ kind: 'thought', text: `按「${persona.name}」设定与 ${model.name} 推理。` });
+      if (webOn) steps.push({ kind: 'search', query: sendText.slice(0, 14), count: 2 });
+
+      const sources = webOn ? [
+        { title: 'HarmonyOS 阔折叠双断点适配指南', site: 'developer.huawei.com', score: '2.6', auth: 4, summary: '折叠与展开态保持状态连续，复杂配置页采用双栏分栏。' },
+        { title: 'DeepSeek Search & Fetch API 文档', site: 'api-docs.deepseek.com', score: '2.5', auth: 4, summary: '按 rerank_score >= 1.5 与 authority >= 3 清洗高质量信源。' }
+      ] : [];
+
+      const branch = { thinkingOpen: false, steps, sources, text: '', streaming: true };
+      session.messages.push({ id: 'a_' + Date.now(), role: 'assistant', activeBranch: 0, branches: [branch] });
+
+      state.streaming = true;
+      state.memoryRatio = Math.min(0.92, state.memoryRatio + 0.08);
+      renderAll();
+
+      const scrollEl = $('chatScroll');
+      scrollEl.scrollTop = scrollEl.scrollHeight;
+
+      const fullReply = `已按 **${persona.name}** 视角完成整理：\n\n• 针对「${sendText.slice(0, 20)}」${atts.length ? `及附件（${atts.map((a) => a.name).join('、')}）` : ''}，直接给出精简结论。\n• 点击下方**重试**可生成对比分支。`;
+
+      let idx = 0;
+      state.streamTimer = setInterval(() => {
+        idx += 6;
+        branch.text = fullReply.slice(0, idx);
+        if (idx >= fullReply.length) {
+          clearInterval(state.streamTimer);
+          branch.text = fullReply;
+          branch.streaming = false;
+          state.streaming = false;
+        }
+        renderMessages();
+        renderChatChrome();
+        lucide.createIcons();
+        scrollEl.scrollTop = scrollEl.scrollHeight;
+      }, 32);
+    }
+
+    function copyToClipboard(text, toastMsg) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(() => showToast(toastMsg)).catch(() => fallbackCopy(text, toastMsg));
+      } else { fallbackCopy(text, toastMsg); }
+    }
+
+    function fallbackCopy(text, toastMsg) {
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch (e) {}
+      document.body.removeChild(ta);
+      showToast(toastMsg);
+    }
+
+    function createNewSession() {
+      const id = 's_' + Date.now();
+      state.sessions.unshift({ id, title: '新对话', time: '刚刚', personaId: state.defaultPersonaId, skillOverrides: {}, messages: [] });
+      state.activeSessionId = id;
+      state.memoryRatio = 0.06;
+      navigateTo('chat');
+    }
+
+    function renderAll() {
+      renderPostureAndRoute();
+      renderChatChrome();
+      renderSessionLists();
+      renderMessages();
+      if (state.sourcePaneOpen) $('sourcePaneBody').innerHTML = buildSourcesListHtml(state.sourcePaneMsgId);
+      renderCreatorPage();
+      renderSkillsPage();
+      renderSettingsPage();
+      lucide.createIcons();
+    }
+
+    // 静态事件绑定
+    $('btnFolded').addEventListener('click', () => { state.posture = 'folded'; renderAll(); });
+    $('btnUnfolded').addEventListener('click', () => { state.posture = 'unfolded'; renderAll(); });
+    $('btnTheme').addEventListener('click', () => {
+      state.dark = !state.dark;
+      document.documentElement.classList.toggle('dark', state.dark);
+      $('themeIcon').setAttribute('data-lucide', state.dark ? 'sun' : 'moon');
+      lucide.createIcons();
+    });
+
+    $('btnSimMemory').addEventListener('click', () => {
+      state.memoryRatio = state.memoryRatio < 0.6 ? 0.76 : (state.memoryRatio < 0.85 ? 0.89 : 0.34);
+      $('memoryBubble').classList.add('hidden');
+      renderAll();
+    });
+    $('btnMemoryBar').addEventListener('click', () => $('memoryBubble').classList.toggle('hidden'));
+    $('btnCompactNow').addEventListener('click', () => {
+      state.compacting = true;
+      $('memoryBubble').classList.add('hidden');
+      renderAll();
+      setTimeout(() => { state.compacting = false; state.memoryRatio = 0.24; renderAll(); showToast('已生成检查点摘要'); }, 800);
+    });
+
+    $('btnToggleSide').addEventListener('click', () => { state.sidebarOpen = false; renderAll(); });
+    $('btnMenuTop').addEventListener('click', () => {
+      if (state.posture === 'unfolded') { state.sidebarOpen = true; renderAll(); }
+      else { $('mobileDrawerBackdrop').classList.remove('hidden'); }
+    });
+    $('btnCloseDrawer').addEventListener('click', () => $('mobileDrawerBackdrop').classList.add('hidden'));
+    $('drawerDismissArea').addEventListener('click', () => $('mobileDrawerBackdrop').classList.add('hidden'));
+
+    $('btnNewChatSide').addEventListener('click', createNewSession);
+    $('btnNewChatTop').addEventListener('click', createNewSession);
+    $('btnNewChatDrawer').addEventListener('click', createNewSession);
+    $('btnCloseSourcePane').addEventListener('click', () => { state.sourcePaneOpen = false; renderAll(); });
+
+    // 页面级路由跳转（全部独立全页，不再弹底部框）
+    document.querySelectorAll('.route-btn').forEach((b) => {
+      b.addEventListener('click', () => navigateTo(b.dataset.route, 'master'));
+    });
+    document.querySelectorAll('[data-drawer-route]').forEach((b) => {
+      b.addEventListener('click', () => navigateTo(b.dataset.drawerRoute, 'master'));
+    });
+    document.querySelectorAll('.back-chat-btn').forEach((b) => {
+      b.addEventListener('click', () => navigateTo('chat'));
+    });
+
+    // 折叠态从详情页退回列表页
+    $('btnCreatorBackList').addEventListener('click', () => { state.foldedSubView = 'master'; renderAll(); });
+    $('btnSkillsBackList').addEventListener('click', () => { state.foldedSubView = 'master'; renderAll(); });
+    $('btnSettingsBackList').addEventListener('click', () => { state.foldedSubView = 'master'; renderAll(); });
+
+    // 创造室事件
+    $('creatorSearch').addEventListener('input', (e) => { state.creatorSearch = e.target.value; renderCreatorPage(); lucide.createIcons(); });
+    $('btnNewSkillMd').addEventListener('click', () => {
+      const id = 'sk_' + Date.now();
+      state.skills.unshift({
+        id, name: '未命名技能', tier: '声明式', globalEnabled: true, minScore: 1.5, minAuth: 3, excludeDomains: '',
+        md: `---\nname: 未命名技能\ntier: L1_DECLARATIVE\n---\n\n# 技能规则\n\n在此编写指令。`
+      });
+      state.creatorActiveSkillId = id;
+      state.foldedSubView = 'detail';
+      renderAll();
+    });
+    $('btnMdEdit').addEventListener('click', () => { state.creatorMode = 'edit'; renderCreatorPage(); });
+    $('btnMdPreview').addEventListener('click', () => { state.creatorMode = 'preview'; renderCreatorPage(); });
+    $('skillMdEditor').addEventListener('input', (e) => {
+      const sk = state.skills.find((s) => s.id === state.creatorActiveSkillId);
+      if (sk) sk.md = e.target.value;
+    });
+    $('btnCreatorAiRewrite').addEventListener('click', () => {
+      const val = $('creatorAiInput').value.trim();
+      if (!val) return;
+      const sk = state.skills.find((s) => s.id === state.creatorActiveSkillId);
+      if (sk) { sk.md = `${sk.md.trim()}\n\n## 新增规则\n- ${val}\n`; $('creatorAiInput').value = ''; renderCreatorPage(); showToast('已更新 SKILL.md'); }
+    });
+    $('btnCreatorDryRun').addEventListener('click', () => {
+      $('creatorDryRunText').textContent = '试跑通过 · 138ms';
+      $('creatorDryRunBanner').classList.remove('hidden');
+    });
+    $('btnCloseDryRun').addEventListener('click', () => $('creatorDryRunBanner').classList.add('hidden'));
+    $('btnCreatorSave').addEventListener('click', () => {
+      const sk = state.skills.find((s) => s.id === state.creatorActiveSkillId);
+      if (sk) { const m = sk.md.match(/^name:\s*(.+)$/m); if (m) sk.name = m[1].trim(); }
+      renderAll();
+      showToast('已保存落盘');
+    });
+
+    // 技能页快捷按钮
+    $('btnSkillImport').addEventListener('click', () => showToast('支持粘贴 JSON 或 Git 链接导入'));
+    $('btnSkillOpenCreator').addEventListener('click', () => {
+      state.creatorActiveSkillId = state.skillsActiveId;
+      navigateTo('creator', 'detail');
+    });
+
+    // 轻量半模态快切
+    $('btnModelCapsule').addEventListener('click', () => openSheet('model'));
+    $('btnSessionPersona').addEventListener('click', () => openSheet('sessionPersona'));
+    $('btnAttach').addEventListener('click', () => openSheet('attach'));
+    $('btnFoldSkillQuick').addEventListener('click', () => openSheet('sessionSkills'));
+    $('btnCloseSheet').addEventListener('click', closeSheet);
+    $('sheetDismissArea').addEventListener('click', closeSheet);
+
+    $('sideSearch').addEventListener('input', (e) => { state.searchQuery = e.target.value; renderSessionLists(); });
+    $('btnSend').addEventListener('click', sendMessage);
+    $('chatInput').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
+    $('chatInput').addEventListener('input', (e) => { e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 96) + 'px'; });
+
+    $('btnExportSpec').addEventListener('click', () => { $('specCode').textContent = ARKUI_SPEC_TEXT; $('specModal').classList.remove('hidden'); lucide.createIcons(); });
+    $('btnCloseSpec').addEventListener('click', () => $('specModal').classList.add('hidden'));
+    $('btnCopySpec').addEventListener('click', () => copyToClipboard(ARKUI_SPEC_TEXT, '已复制 Pura X Max v3 定稿指令'));
+
+    renderAll();
+  </script>
+</body>
+</html>
