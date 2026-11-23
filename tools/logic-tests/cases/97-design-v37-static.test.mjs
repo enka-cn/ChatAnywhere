@@ -188,6 +188,25 @@ test('InlineMath：latexToText + 希腊字母/常见符号映射（纯逻辑）'
   console.log('  证据：latexToText + 8 组希腊映射，零平台依赖');
 });
 
+test('v3.8 结构：InlineMath 含 buildFunctions/isSimpleOperand，MarkdownParser 复杂判定含 \\lim 与 fracHasOperator', () => {
+  const inline = read(path.join(CHAT_ETS, 'components', 'InlineMath.ets'));
+  assert.ok(/function buildFunctions\(/.test(inline), 'InlineMath 缺少 buildFunctions（函数名/格式命令表）');
+  assert.ok(/function isSimpleOperand\(/.test(inline), 'InlineMath 缺少 isSimpleOperand（frac 括号判定）');
+  assert.ok(inline.includes('FUNCTIONS'), 'InlineMath 缺少函数映射表常量');
+  assert.ok(inline.includes('SUBSCRIPT') || inline.includes('subscript'), 'InlineMath 缺少上下标处理');
+
+  const parser = read(path.join(CHAT_ETS, 'components', 'MarkdownParser.ets'));
+  assert.ok(/function fracHasOperator\(/.test(parser), 'MarkdownParser 缺少 fracHasOperator');
+  assert.ok(parser.includes('\\lim'), 'MarkdownParser 复杂判定未包含 \\lim');
+  assert.ok(/isComplexMath[\s\S]{0,400}?fracHasOperator/.test(parser), 'isComplexMath 未使用 fracHasOperator');
+  assert.ok(/raw\.length > 0 && isComplexMath\(raw\)/.test(parser),
+    'MarkdownParser 缺少「未加 $ 的独占成行纯 LaTeX」提升逻辑');
+
+  const block = read(path.join(CHAT_ETS, 'components', 'MarkdownBlock.ets'));
+  assert.ok(block.includes('CodeBlockView(') && block.includes('MathBlock('), 'MarkdownBlock 未接入代码/公式组件');
+  console.log('  证据：buildFunctions/isSimpleOperand/FUNCTIONS/上下标 + fracHasOperator/\\lim/纯 LaTeX 行提升；MarkdownBlock 接入保持');
+});
+
 test('PromptPresets：BASE_PROMPT 含 LaTeX 约定（行内 $...$、独立 $$...$$）', () => {
   const p = path.join(PKG, 'core_context', 'src', 'main', 'ets', 'PromptPresets.ets');
   assert.ok(exists(p), '缺少 PromptPresets.ets');

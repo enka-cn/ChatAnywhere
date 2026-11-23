@@ -1349,3 +1349,111 @@ warnings 仍为 `ArkTS:WARN Function may throw exceptions.`（平台 API 建议�
 - **契约**：新增 6 个组件与 rawfile/katex 资源已登记；`PromptPresets` BASE_PROMPT 追加 LaTeX 约定；`ChatRuntimeApi`/`ChatRuntime` 未动；main_pages 4 页；颜色 64 键。
 - **缺陷**：本轮**未发现需要修复的缺陷**。
 - **残余**：真机公式渲染/高度自适应/横向滚动/剪贴板/链接/长按划选与真实模型 LaTeX 输出仍需按 §20.7 冒烟；无真机前不得宣布 v3.7 富文本渲染闭环达成。
+
+---
+
+## 21. v3.8 行内公式修复验收（命令剥壳 / 上下标顺序 / frac 括号 / 复杂提升）
+
+> 验收人：`qa-verify`；数据快照：构建 2026-11-23 19:15:26–19:16:18；用例 2026-11-23 19:15:16（Asia/Shanghai）。
+> 范围（task-45）：修复真机反馈的行内公式 4 个问题 —— 命令剥壳不彻底、上下标顺序错乱、frac 表达式缺括号、独占成行纯 LaTeX 未提升。
+> **验证前提不变**：无真机联调（无设备 / 无 API Key）；验证 = ArkTS 编译期类型检查 + 纯逻辑单测 + v3.8 静态断言 + 代码审查。
+> 构建配置两态：工作区本机签名（`skip-worktree` 隐藏）/ 仓库 HEAD 脱敏（`signingConfigs: []`）。
+
+### 21.1 改动面（git 工作区）
+
+v3.8 应用范围 = 2 个纯逻辑文件重写/增强 + 文档 + 测试：
+
+| 文件 | 变化 |
+| --- | --- |
+| `chat/components/InlineMath.ets`（重写增强，522 行/496 非空） | `buildFunctions()` 函数/格式命令表（:130/:159，含 sin/cos/tan/lim/ln/log/exp/arcsin + `\text/\mathrm/\mathbf/\left/\right/\,/\quad`）；`buildSubscripts()/SUBSCRIPTS`（:202/:234）与 `SUPERSCRIPTS` 上下标映射；`isSimpleOperand()`（:304）判定 frac 操作数是否需要括号；`latexToText()`（:363）重写命令剥壳/上下标顺序/frac 括号/`\left` `\right`/`\text` 中文 |
+| `chat/components/MarkdownParser.ets`（修改，773 行/723 非空） | `fracHasOperator()`（:428）检测 `\frac` 分子/分母含 `+/-`；`isComplexMath()`（:450）增加 `\lim`（:451）与 `fracHasOperator`（:455）判定；新增「独占成行、未加 `$` 定界的纯 LaTeX 公式行」提升（:461 注释、:748 `raw.length > 0 && isComplexMath(raw)`） |
+| `README.md` / `docs/DEV_GUIDE.md` | 同轮文档更新（Lead） |
+| 测试 | 新增 `48-inline-math.test.mjs`；更新 `47-markdown-math`（v3.8 精化：简单 `\frac{1}{2}` 不提升）；扩展 `97-design-v37-static`（v3.8 结构断言） |
+
+### 21.2 构建矩阵（工作区本机签名态触发 unsigned 回退；仓库态脱敏）
+
+| 目标 | 结果 | 开始时间 | 日志 | 备注 |
+| --- | --- | --- | --- | --- |
+| `core_model` | **BUILD-OK** | 19:15:26 | `build-logs/core_model-20261123-191526.log` | 0 error / 30 warning |
+| `core_protocol` | **BUILD-OK** | 19:15:38 | `build-logs/core_protocol-20261123-191539.log` | 0 error / 32 warning |
+| `core_context` | **BUILD-OK** | 19:15:51 | `build-logs/core_context-20261123-191552.log` | 0 error / 30 warning |
+| `core_plugin` | **BUILD-OK** | 19:16:03 | `build-logs/core_plugin-20261123-191604.log` | 0 error / 33 warning |
+| `chat`（entry HAP，含全部 HAR） | **BUILD-OK [unsigned verification]** | 19:16:18 | `build-logs/all-20261123-191618-unsigned.log` | 0 error / 30 warning；工作区本机签名报 `11014003` → 临时跳过签名重试并恢复 |
+
+| 构建配置两态 | 证据 |
+| --- | --- |
+| 工作区（本机签名） | `build-profile.json5` SHA256 构建前 = 后 = `0259B43A…35C665`（2448B）；`skip-worktree` 隐藏，不提交 |
+| 仓库 HEAD（公开脱敏） | `git show HEAD:build-profile.json5`：`signingConfigs: []`、无 certpath/keyPassword/storePassword/用户路径、product 保留 default 绑定 |
+| 本机材料备份 | `build-profile.local.json5` 存在且被 `.gitignore` 忽略 |
+
+warnings 仍为 `ArkTS:WARN Function may throw exceptions.`（平台 API 建议提示），0 error。
+
+### 21.3 用例统计（最终）
+
+| 指标 | 值 |
+| --- | --- |
+| 运行时间 | **2026-11-23 19:15:16** |
+| 用例文件 | **38 个** |
+| 断言级用例 | **535 条** |
+| 通过 / 失败 / 跳过 | **535 / 0 / 0** |
+| 结果 | `RESULT: PASS`（`run.ps1` 退出码 0） |
+| prepare 产物 | 拷贝 53 个纯逻辑文件；跳过 5；未命中 1；0 告警 |
+
+新增/更新用例（测试侧）：
+- **新增 `48-inline-math`**（7 用例）：Lead 验证的 9 组输出逐字一致；复杂公式 0 反斜杠 + lim/frac/上下标顺序；14 个函数/格式命令 0 反斜杠；`splitBlocks` 复杂公式/未加 `$` 纯 LaTeX 提升为单个 math 块；`$x$`/`$5`/`\$`/`\(...\)` 回归；围栏/表格/align* 回归；空串/纯文本/重复调用稳定。
+- **更新 `47-markdown-math`**（13 用例）：提升样例改为 v3.8 复杂判定（`\frac{a+b}{c}`/`\sum`/`\int`/`\sqrt`），并断言简单 `\frac{1}{2}` **不**提升（只保留行内）。
+- **扩展 `97-design-v37-static`**（11 用例）：新增 v3.8 结构断言（InlineMath `buildFunctions/isSimpleOperand/FUNCTIONS/上下标`；MarkdownParser `fracHasOperator`/`\lim`/纯 LaTeX 提升；MarkdownBlock 接入保持）。
+
+### 21.4 四项修复证据（Node 直跑 prepare 产物 + 单测断言）
+
+| # | 修复 | 验证输出（逐字） |
+| --- | --- | --- |
+| 1 | **命令剥壳** | `e^\xi>0` → `e^ξ>0`；`\sin x` → `sin x`；`\cos x` → `cos x`；`\tan x` → `tan x`；`\ln x` → `ln x`；`\log_{2} n` → `log₂ n`；`\exp(x)` → `exp(x)`；`\arcsin x` → `arcsin x`；14 个函数/格式样本输出 **0 反斜杠** |
+| 2 | **上下标顺序** | `\lim_{x\to 0}\frac{\cos x - e^{-x^2/2}}{x^4}` → `lim_(x→ 0)(cos x - e^(-x²/2))/x⁴`（0 反斜杠；`x⁴` 未被二次处理为 `^4^`）；`\log_{2}` → `log₂` |
+| 3 | **frac 括号** | `\frac{1}{24}` → `1/24`；`\frac{x^2}{2}` → `x²/2`；`\frac{a+b}{c}` → `(a+b)/c`；`\left(\frac{1}{24}-\frac{1}{8}\right)` → `(1/24-1/8)`（`isSimpleOperand` 判定简单操作数不加括号） |
+| 4 | **复杂提升** | `splitBlocks('\lim_{x\to 0}\frac{\cos x - e^{-x^2/2}}{x^4}')` → 单个 `kind==='math'` 块；未加 `$` 的独占成行纯 LaTeX（`\frac{a+b}{c}` / `\sum_{i=1}^n i` / `\sqrt{2}`）→ math 块；简单 `\frac{1}{2}` 保持段落行内（v3.8 精化） |
+| — | 回归不破 | `$x$` 行内 math span、金额 `$5` 纯文本、`\$` 转义、`\(...\)` 行内、代码围栏/表格内公式不解析、`\begin{align*} → aligned`、math 块 id+signature 稳定 |
+
+### 21.5 静态断言总览
+
+| 文件 | 结果 | 覆盖 |
+| --- | --- | --- |
+| `97-design-v37-static` | **11/11 PASS** | v3.7 能力 + **v3.8 结构**（buildFunctions/isSimpleOperand/fracHasOperator/`\lim`/纯 LaTeX 提升） |
+| `96`–`90` | **6/6 + 6/6 + 6/6 + 6/6 + 11/11 + 15/15 + 11/11 PASS** | 64 色键基线与既有设计/重构门禁全部保持 |
+| 合计 | **72/72 PASS** | — |
+
+### 21.6 契约 / 回归
+
+| 项 | 证据 |
+| --- | --- |
+| 改动文件（已登记） | `InlineMath.ets` 19:12:01 `FFF767008339D5B5`（522 行/496 非空）；`MarkdownParser.ets` 19:10:38 `43F67A81654A96DE`（773 行/723 非空）；`MarkdownBlock.ets` 未变 `958FA0B491F6967C` |
+| 颜色 | base `AE4D60A8BE1785EC` / dark `BC0DE5AECC39373E`，仍 **64 键**一致（v3.8 未改颜色） |
+| `packages/*` 未变 | 最新 mtime 仍 v3.7：core_context `PromptPresets.ets` 18:47；core_model 11:23、core_protocol 10:57、core_plugin 11-20 |
+| 未改动 | `ChatRuntimeApi.ets` 仍 `BBEC5EB0320C5919`；`main_pages` 4 页；`ChatRuntime` 非空 338 / `SessionController` 409（≤500） |
+| 跨轮回归 | R1→v3.7 全量保持绿（535/535）；v3.7 富文本/64 键断言无回归 |
+
+### 21.7 未覆盖项与风险
+
+| # | 风险/未覆盖 | 说明 |
+| --- | --- | --- |
+| 1 | **无真机联调仍成立** | 行内公式实际 Span 渲染观感、KaTeX 块公式观感、长公式换行/高度、复制源码、日夜配色对比度均未设备验证 |
+| 2 | **无 API Key** | 真实模型输出的 LaTeX 多样性（多行/嵌套环境/极端写法）未端到端联调；本次只覆盖 Lead 反馈的 9 组 + 14 个函数/格式样本 |
+| 3 | 解析边界 | 未覆盖更多命令（`\overrightarrow`/矩阵/多行环境等）；未知命令行为以当前实现为准 |
+| 4 | 构建配置两态 | 工作区本机签名 CLI 报 `11014003`（走 unsigned 回退）；仓库 HEAD 已脱敏但**未产出可安装签名包** |
+| 5 | 咨询类 warning | 模块重编译 30–33 条 `Function may throw exceptions`，0 error |
+| 6 | 静态门禁基线 | v3.8 结构关键字（buildFunctions/isSimpleOperand/fracHasOperator）为当前基线，后续重构需同步更新 |
+
+**建议真机冒烟清单（v3.8 重点）**：
+1. **泰勒展开**：提问「用泰勒展开说明 e^x」：回复中的 `$$…$$` 块公式离线渲染、行内 `$x$`/`$e^x$` 正常显示、`\frac`/上下标/`\lim` 在 KaTeX 中排版正确、无字面反斜杠/命令残留。
+2. **旧 bug 复现验证**：含 `e^\xi>0`、`\sin x`、`\frac{a+b}{c}`、`\lim_{x\to 0}\frac{\cos x - e^{-x^2/2}}{x^4}` 的消息在 App 内显示为可读文本/公式，不再是 `\xi`、`\frac{...}{...}` 原文。
+3. **降级路径**：断网/飞行模式下公式块 3s 后显示源码且可复制、行内公式仍显示文本映射；长按可划选复制。
+4. **回归**：Markdown 列表/链接/代码块、抽屉/日夜面板/模型胶囊/震动开关/记忆卡等 v3/v3.1–v3.7 功能无回归。
+
+### 21.8 结论
+
+- **构建**：最终快照（19:15:26–19:16:18）5/5 BUILD-OK，0 error；工作区本机签名触发 unsigned 回退且恢复无损（工作区 SHA256 前后一致 `0259B43A…`），仓库 HEAD 已脱敏（`signingConfigs: []`）。
+- **用例**：**38 文件 / 535 断言全绿**（0 失败 / 0 跳过）；prepare 53 拷贝/0 告警；新增/更新 3 个用例文件。
+- **v3.8 四项修复**全部有逐字输出证据：命令剥壳（9 组 + 14 样本 0 反斜杠）、上下标顺序（lim 复合公式 0 反斜杠）、frac 括号（简单操作数不括、表达式括）、复杂提升（含未加 `$` 纯 LaTeX 行；简单 `\frac{1}{2}` 不提升）。
+- **契约**：`InlineMath`/`MarkdownParser` 改动已登记；颜色仍 64 键；packages 未变；`ChatRuntimeApi`/`ChatRuntime` 未动；main_pages 4 页。
+- **缺陷**：本轮**未发现需要修复的缺陷**。
+- **残余**：真机 Span/KaTeX 实际观感与真实模型 LaTeX 多样性仍需按 §21.7 冒烟；无真机前不得宣布 v3.8 行内公式修复闭环达成。

@@ -5,7 +5,7 @@
 > UI 按 [`docs/design/chatanywhere_v3_pura_x_max.html`](docs/design/chatanywhere_v3_pura_x_max.html) 设计稿落地：**华为 Pura X Max 折叠形态（5.4″ 外屏 / 7.7″ 阔内屏）双栏 Master-Detail**、6 档思考、Cherry Studio 级角色配置、SKILL.md 编辑器。
 >
 > **交付状态**：4 个 HAR + entry HAP 全部落地，`hvigor assembleHap` **BUILD SUCCESSFUL**；
-> 纯逻辑 Node 单测 **37 个文件 / 527 条断言全绿**（含 70 项设计/架构静态门禁）；受环境限制（无签名证书、无模型 API Key）未做真机联调，详见 [§5 已知限制](#5-已知限制透明说明)。
+> 纯逻辑 Node 单测 **38 个文件 / 535 条断言全绿**（含 72 项设计/架构静态门禁）；受环境限制（无签名证书、无模型 API Key）未做真机联调，详见 [§5 已知限制](#5-已知限制透明说明)。
 
 ---
 
@@ -138,7 +138,7 @@ ChatAnyWhere/
 | 真实模型与密钥（v3.2） | core_protocol + core_model + SettingsModelsView | **不再内置任何占位模型**：厂商预设 + 真实 `/models` 探测（DeepSeek / Anthropic / OpenAI 兼容），探测结果落 RDB `provider_models`，勾选启用的模型才出现在顶栏与角色配置；测试连接/拉取支持输入框未保存的新 Key；`VendorCard` 独立组件修复状态不刷新 |
 | Markdown 排版（v3.7） | chat | 无序列表 5×5 圆点与首行中线严格对齐、有序序号行高、项距 6vp；链接 http/https 校验后系统浏览器打开；正文/列表/引用/表格长按划选；标题 10/2 呼吸间距 |
 | 代码块高亮（v3.7） | chat | `CodeHighlighter` 纯 ArkTS 词法器（8 类 token / 7 语言族，拼接保真）+ `CodeBlockView`：36vp 语言栏、一键复制 1.5s 反馈、横向滚动保行宽、等宽 13.5fp/21、日夜 GitHub Light / One Dark 双套色 |
-| 数学公式（v3.7） | chat + core_context | `MarkdownParser` 解析 `$$…$$`/`\[…\]`/`$…$`/`\(…\)`、复杂行内公式提升为块、`align→aligned`；`MathBlock` 本地 KaTeX（rawfile 548KB，零 CDN）Web 渲染 + 高度自适应 + 3s 降级源码；行内公式纯 ArkTS 映射零 WebView；BASE_PROMPT 统一 LaTeX 输出约定 |
+| 数学公式（v3.7） | chat + core_context | `MarkdownParser` 解析 `$$…$$`/`\[…\]`/`$…$`/`\(…\)`、`\lim/\sum/\int/\sqrt/\begin{` 及含加减号复合分数提升为块、`align→aligned`；`MathBlock` 本地 KaTeX（rawfile 548KB，零 CDN）Web 渲染 + 高度自适应 + 3s 降级源码；行内公式纯 ArkTS 映射（函数名 `\sin/\cos/\lim` 剥壳、`e^\xi→e^ξ`、`\frac{1}{24}→1/24`），零 WebView；BASE_PROMPT 统一 LaTeX 输出约定 |
 | 思考强度特效（v3.6） | chat | `ReasoningEffortPanel` **日/夜双主题**：日间清透浅面（#F6F7FB→#FFF、深色文字、0.08–0.14 轻光晕）/ 夜间深空暗舱（#11131B→#181C28、霓虹光晕 0.12–0.28），随系统深浅色自动切换；顶部图标 + 档位大字 + 6 格阶梯能量柱；**手写能量槽**（无原生 Slider）：14vp 边距、8vp 轨道 + 渐变光轨 + 22vp 白钮/8vp 档位色内点 + 光晕；`HapticUtil` 跨档轻震 |
 | 弹窗关闭按钮（v3.6） | chat | 模型/设置弹窗 `showClose: false`，标题行右侧统一 `IconBtn`（28vp 圆钮 / 14vp 图标 / 圆形浅灰底），与标题垂直居中；保留下滑与点空白关闭 |
 | 触感震动反馈（v3.5） | chat | 设置「跨端与数据」新增品牌蓝 Toggle（默认开启，持久化 `haptic.enabled`）；`HapticUtil` 统一接管滑条等轻震，关闭后全局立即静音，无马达/权限静默降级 |

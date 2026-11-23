@@ -390,10 +390,84 @@ function wholeLineMath(line: string): string {
   return '';
 }
 
-/** 复杂公式（独占成块的候选）：含分数/求和/积分/根号/多行环境。 */
+/** 从 start（应为 `{`）读取花括号分组；返回 [内容, 结束后下标]；失败返回 []。 */
+function readBraceGroup(text: string, start: number): string[] {
+  const out: string[] = [];
+  if (start >= text.length || text.charAt(start) !== '{') {
+    return out;
+  }
+  let depth: number = 0;
+  let i: number = start;
+  while (i < text.length) {
+    const ch: string = text.charAt(i);
+    if (ch === '{') {
+      depth += 1;
+      if (depth > 1) {
+        out.push(ch);
+      }
+      i += 1;
+      continue;
+    }
+    if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        const result: string[] = [out.join(''), `${i + 1}`];
+        return result;
+      }
+      out.push(ch);
+      i += 1;
+      continue;
+    }
+    out.push(ch);
+    i += 1;
+  }
+  return out;
+}
+
+/** \frac 的分子/分母是否含 + / -（复杂到应交给 KaTeX 块渲染）。 */
+function fracHasOperator(body: string): boolean {
+  let index: number = body.indexOf('\\frac');
+  while (index >= 0) {
+    const first: string[] = readBraceGroup(body, index + 5);
+    if (first.length === 2) {
+      if (first[0].indexOf('+') >= 0 || first[0].indexOf('-') >= 0) {
+        return true;
+      }
+      const second: string[] = readBraceGroup(body, Number.parseInt(first[1]));
+      if (second.length === 2 && (second[0].indexOf('+') >= 0 || second[0].indexOf('-') >= 0)) {
+        return true;
+      }
+    }
+    index = body.indexOf('\\frac', index + 1);
+  }
+  return false;
+}
+
+/**
+ * 复杂公式（独占成块的候选）：
+ * 含 \lim / \sum / \int / \sqrt / \begin{；或 \frac 的分子/分母含 + / -。
+ */
 function isComplexMath(body: string): boolean {
-  return body.indexOf('\\frac') >= 0 || body.indexOf('\\sum') >= 0 || body.indexOf('\\int') >= 0
-    || body.indexOf('\\sqrt') >= 0 || body.indexOf('\\begin{') >= 0;
+  if (body.indexOf('\\lim') >= 0 || body.indexOf('\\sum') >= 0 || body.indexOf('\\int') >= 0
+    || body.indexOf('\\sqrt') >= 0 || body.indexOf('\\begin{') >= 0) {
+    return true;
+  }
+  if (body.indexOf('\\frac') >= 0 && fracHasOperator(body)) {
+    return true;
+  }
+  return false;
+}
+
+/** 独占成行、未加 $ 定界的纯 LaTeX 公式行（如 `\lim_{x\to 0}\frac{...}{...}`）。 */
+function rawLatexBody(line: string): string {
+  const trimmed: string = line.trim();
+  if (trimmed.length === 0 || trimmed.startsWith('\\') === false) {
+    return '';
+  }
+  if (trimmed.indexOf('$') >= 0) {
+    return '';
+  }
+  return trimmed;
 }
 
 /** 轻量字符串哈希（只用于内容签名，不做安全用途）。 */
@@ -667,9 +741,16 @@ export function splitBlocks(markdown: string): MdBlock[] {
       if (body.length > 0 && isComplexMath(body)) {
         flushParagraph();
         pushMathBlock(blocks, body);
-      } else {
-        buffer.push(one);
+        continue;
       }
+      // 未加 $ 定界、独占成行的纯 LaTeX 复杂公式，同样升级为 math 块
+      const raw: string = rawLatexBody(one);
+      if (raw.length > 0 && isComplexMath(raw)) {
+        flushParagraph();
+        pushMathBlock(blocks, raw);
+        continue;
+      }
+      buffer.push(one);
     }
     flushParagraph();
     i = cursor > i ? cursor : i + 1;

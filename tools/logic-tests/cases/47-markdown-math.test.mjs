@@ -73,7 +73,8 @@ if (!m || !m.splitBlocks) {
   });
 
   test('复杂行内公式独占成行时提升为 math 块，两侧文字仍是段落', () => {
-    for (const body of ['\\frac{1}{2}', '\\sum_{i=1}^n i', '\\int_0^1 x', '\\sqrt{2}']) {
+    // v3.8：复杂判定 = \lim/\sum/\int/\sqrt/\begin{ 或 \frac 分子/分母含运算符
+    for (const body of ['\\frac{a+b}{c}', '\\sum_{i=1}^n i', '\\int_0^1 x', '\\sqrt{2}']) {
       const blocks = splitBlocks(`前文\n$${body}$\n后文`);
       assert.equal(blocks.length, 3, `${body} 块数 ${blocks.length}`);
       assert.equal(blocks[0].kind, 'paragraph');
@@ -83,6 +84,11 @@ if (!m || !m.splitBlocks) {
       assert.equal(blocks[2].kind, 'paragraph');
       assert.equal(blocks[2].text, '后文');
     }
+    // v3.8 精化：操作数简单的 \frac{1}{2} 不算复杂，不提升，保持段落内行内公式
+    const simple = splitBlocks('前文\n$\\frac{1}{2}$\n后文');
+    assert.equal(simple.length, 1);
+    assert.equal(simple[0].kind, 'paragraph');
+    assert.ok(simple[0].text.includes('\\frac{1}{2}'));
   });
 
   test('普通行内公式：$x$ 生成 math span；不独占成段的简单公式不提升为块', () => {
