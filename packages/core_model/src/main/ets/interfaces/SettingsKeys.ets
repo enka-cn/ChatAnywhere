@@ -19,6 +19,8 @@ export class SettingsKeys {
   static readonly LAN_EDITOR_LAST_PORT: string = 'lan.lastPort';
   static readonly LAST_SESSION_ID: string = 'chat.lastSessionId';
   static readonly USER_NAME: string = 'chat.userName';
+  /** 触感震动反馈总开关（'true' | 'false'，默认开启）。 */
+  static readonly HAPTIC_ENABLED: string = 'haptic.enabled';
 }
 
 /** Secret alias 常量。 */

@@ -6,8 +6,9 @@
  */
 import { pasteboard } from '@kit.BasicServicesKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { ExportResult, ImportResult, SessionMeta } from '@app/core_model';
+import { ExportResult, ImportResult, SessionMeta, SettingsKeys } from '@app/core_model';
 import { AppServices } from '../app/AppServices';
+import { HapticUtil } from '../app/HapticUtil';
 import { Icons, Layout, Theme } from '../app/Theme';
 import { LanEditorServer, LanServerInfo } from '../bridge/LanEditorServer';
 import { LiveViewBridge } from '../bridge/LiveViewBridge';
@@ -39,15 +40,47 @@ export struct SettingsDataView {
   @State private indexBusy: boolean = false;
   @State private indexText: string = '';
   @State private hasShared: boolean = false;
+  /** 触感震动总开关（持久化在 SettingsKeys.HAPTIC_ENABLED）。 */
+  @State private hapticOn: boolean = true;
 
   private lanStartedHere: boolean = false;
 
   aboutToAppear(): void {
     this.load();
+    this.loadHaptic();
   }
 
   aboutToDisappear(): void {
     this.releaseLan();
+  }
+
+  /** 初值来自持久化；读取失败回退 HapticUtil 内存值。 */
+  private async loadHaptic(): Promise<void> {
+    try {
+      const stored: string = await AppServices.get().requireModel().repo.getString(SettingsKeys.HAPTIC_ENABLED, 'true');
+      this.hapticOn = stored !== 'false';
+    } catch (e) {
+      this.hapticOn = HapticUtil.isEnabled();
+    }
+  }
+
+  /** 切换总开关：立即生效（内存开关同步更新）；写盘失败回滚 UI 并提示。 */
+  private async toggleHaptic(isOn: boolean): Promise<void> {
+    this.hapticOn = isOn;
+    try {
+      await HapticUtil.setEnabled(isOn);
+      const stored: string = await AppServices.get().requireModel().repo.getString(SettingsKeys.HAPTIC_ENABLED, 'true');
+      const saved: boolean = stored !== 'false';
+      if (saved !== isOn) {
+        this.hapticOn = !isOn;
+        await HapticUtil.setEnabled(!isOn);
+        this.setStatus('触感开关保存失败', true);
+      }
+    } catch (e) {
+      this.hapticOn = !isOn;
+      await HapticUtil.setEnabled(!isOn);
+      this.setStatus(`触感开关保存失败：${(e as Error).message}`, true);
+    }
   }
 
   private load(): void {
@@ -200,231 +233,139 @@ export struct SettingsDataView {
   @Builder
   statusLine() {
     if (this.statusText.length > 0) {
-      Text(this.statusText)
-        .fontSize(Layout.fontSmall)
-        .fontColor(this.statusError ? Theme.danger : Theme.success)
-        .width('100%')
-        .maxLines(2)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
+      Text(this.statusText).fontSize(Layout.fontSmall).fontColor(this.statusError ? Theme.danger : Theme.success).width('100%').maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis })
     }
+  }
+
+  @Builder
+  hapticCard() {
+    Row({ space: Layout.s3 }) {
+      SymbolGlyph(Icons.sparkles).fontSize(Layout.iconM).fontColor([Theme.iconSecondary])
+      Column({ space: 2 }) {
+        Text('触感震动反馈').fontSize(Layout.fontUi).fontColor(Theme.textPrimary)
+        Text('思考强度切换等交互的轻触反馈').fontSize(Layout.fontCaption).fontColor(Theme.textSecondary)
+      }.alignItems(HorizontalAlign.Start).layoutWeight(1)
+      Toggle({ type: ToggleType.Switch, isOn: this.hapticOn }).selectedColor(Theme.brand)
+        .onChange((isOn: boolean) => {
+          this.toggleHaptic(isOn);
+        })
+    }.width('100%').padding(Layout.s3).backgroundColor(Theme.bgSurface).borderRadius(Layout.radiusL).border({ width: 1, color: Theme.border })
   }
 
   @Builder
   lanCard() {
     Column({ space: Layout.s2 }) {
       Row({ space: Layout.s3 }) {
-        SymbolGlyph(Icons.laptop)
-          .fontSize(Layout.iconM)
-          .fontColor([Theme.iconSecondary])
+        SymbolGlyph(Icons.laptop).fontSize(Layout.iconM).fontColor([Theme.iconSecondary])
         Column({ space: 2 }) {
-          Text('电脑局域网编辑')
-            .fontSize(Layout.fontUi)
-            .fontColor(Theme.textPrimary)
+          Text('电脑局域网编辑').fontSize(Layout.fontUi).fontColor(Theme.textPrimary)
           if (this.lanOn && this.lanUrl.length > 0) {
-            Text(this.lanUrl)
-              .fontSize(Layout.fontCaption)
-              .fontColor(Theme.brand)
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
+            Text(this.lanUrl).fontSize(Layout.fontCaption).fontColor(Theme.brand).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
           } else if (this.lanHint.length > 0) {
-            Text(this.lanHint)
-              .fontSize(Layout.fontCaption)
-              .fontColor(Theme.textTertiary)
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
+            Text(this.lanHint).fontSize(Layout.fontCaption).fontColor(Theme.textTertiary).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
           }
-        }
-        .alignItems(HorizontalAlign.Start)
-        .layoutWeight(1)
+        }.alignItems(HorizontalAlign.Start).layoutWeight(1)
 
         if (this.lanOn && this.lanUrl.length > 0) {
-          SymbolGlyph(Icons.copy)
-            .fontSize(Layout.iconM)
-            .fontColor([Theme.iconSecondary])
-            .padding({ right: Layout.s2 })
+          SymbolGlyph(Icons.copy).fontSize(Layout.iconM).fontColor([Theme.iconSecondary]).padding({ right: Layout.s2 })
             .onClick(() => {
               this.copyText(this.lanUrl, '地址已复制');
             })
         }
-        Toggle({ type: ToggleType.Switch, isOn: this.lanOn })
-          .selectedColor(Theme.brand)
-          .enabled(!this.lanBusy)
+        Toggle({ type: ToggleType.Switch, isOn: this.lanOn }).selectedColor(Theme.brand).enabled(!this.lanBusy)
           .onChange((isOn: boolean) => {
             this.toggleLan(isOn);
           })
-      }
-      .width('100%')
-    }
-    .width('100%')
-    .padding(Layout.s3)
-    .backgroundColor(Theme.bgSurface)
-    .borderRadius(Layout.radiusL)
-    .border({ width: 1, color: Theme.border })
+      }.width('100%')
+    }.width('100%').padding(Layout.s3).backgroundColor(Theme.bgSurface).borderRadius(Layout.radiusL).border({ width: 1, color: Theme.border })
   }
 
   @Builder
   notifyCard() {
     Row({ space: Layout.s3 }) {
-      SymbolGlyph(Icons.infoCircle)
-        .fontSize(Layout.iconM)
-        .fontColor([Theme.iconSecondary])
-      Text('通知权限')
-        .fontSize(Layout.fontUi)
-        .fontColor(Theme.textPrimary)
-        .layoutWeight(1)
+      SymbolGlyph(Icons.infoCircle).fontSize(Layout.iconM).fontColor([Theme.iconSecondary])
+      Text('通知权限').fontSize(Layout.fontUi).fontColor(Theme.textPrimary).layoutWeight(1)
       if (this.notifyOn) {
-        Text('已开启')
-          .fontSize(Layout.fontUi)
-          .fontColor(Theme.brand)
+        Text('已开启').fontSize(Layout.fontUi).fontColor(Theme.brand)
       } else {
-        Text('允许')
-          .fontSize(Layout.fontUi)
-          .fontColor(Theme.brand)
+        Text('允许').fontSize(Layout.fontUi).fontColor(Theme.brand)
           .onClick(() => {
             this.askNotify();
           })
       }
-    }
-    .width('100%')
-    .padding(Layout.s3)
-    .backgroundColor(Theme.bgSurface)
-    .borderRadius(Layout.radiusL)
-    .border({ width: 1, color: Theme.border })
+    }.width('100%').padding(Layout.s3).backgroundColor(Theme.bgSurface).borderRadius(Layout.radiusL).border({ width: 1, color: Theme.border })
   }
 
   @Builder
   exportCard() {
     Row({ space: Layout.s3 }) {
-      SymbolGlyph(Icons.download)
-        .fontSize(Layout.iconM)
-        .fontColor([Theme.iconSecondary])
+      SymbolGlyph(Icons.download).fontSize(Layout.iconM).fontColor([Theme.iconSecondary])
       Column({ space: 2 }) {
-        Text('导出对话历史')
-          .fontSize(Layout.fontUi)
-          .fontColor(Theme.textPrimary)
-        Text(this.exportText.length > 0 ? this.exportText : '全部对话打包 ZIP')
-          .fontSize(Layout.fontCaption)
-          .fontColor(Theme.textTertiary)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-      }
-      .alignItems(HorizontalAlign.Start)
-      .layoutWeight(1)
+        Text('导出对话历史').fontSize(Layout.fontUi).fontColor(Theme.textPrimary)
+        Text(this.exportText.length > 0 ? this.exportText : '全部对话打包 ZIP').fontSize(Layout.fontCaption).fontColor(Theme.textTertiary).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+      }.alignItems(HorizontalAlign.Start).layoutWeight(1)
 
       if (this.exportPath.length > 0) {
-        SymbolGlyph(Icons.copy)
-          .fontSize(Layout.iconM)
-          .fontColor([Theme.iconSecondary])
+        SymbolGlyph(Icons.copy).fontSize(Layout.iconM).fontColor([Theme.iconSecondary])
           .onClick(() => {
             this.copyText(this.exportPath, '路径已复制');
           })
       }
       if (this.exportBusy) {
-        Text('打包中')
-          .fontSize(Layout.fontSmall)
-          .fontColor(Theme.textTertiary)
+        Text('打包中').fontSize(Layout.fontSmall).fontColor(Theme.textTertiary)
       } else {
-        Text('导出 ZIP')
-          .fontSize(Layout.fontSmall)
-          .fontColor(Theme.textPrimary)
-          .padding({ left: Layout.s3, right: Layout.s3, top: 6, bottom: 6 })
-          .borderRadius(Layout.radiusM)
-          .backgroundColor(Theme.bgPage)
+        Text('导出 ZIP').fontSize(Layout.fontSmall).fontColor(Theme.textPrimary).padding({ left: Layout.s3, right: Layout.s3, top: 6, bottom: 6 }).borderRadius(Layout.radiusM).backgroundColor(Theme.bgPage)
           .onClick(() => {
             this.exportAll();
           })
       }
-    }
-    .width('100%')
-    .padding(Layout.s3)
-    .backgroundColor(Theme.bgSurface)
-    .borderRadius(Layout.radiusL)
-    .border({ width: 1, color: Theme.border })
+    }.width('100%').padding(Layout.s3).backgroundColor(Theme.bgSurface).borderRadius(Layout.radiusL).border({ width: 1, color: Theme.border })
   }
 
   @Builder
   importCard() {
     Column({ space: Layout.s2 }) {
       Row({ space: Layout.s3 }) {
-        SymbolGlyph(Icons.upload)
-          .fontSize(Layout.iconM)
-          .fontColor([Theme.iconSecondary])
-        Text('导入对话历史')
-          .fontSize(Layout.fontUi)
-          .fontColor(Theme.textPrimary)
-          .layoutWeight(1)
-        SymbolGlyph(this.importOpen ? Icons.chevronUp : Icons.chevronDown)
-          .fontSize(Layout.iconM)
-          .fontColor([Theme.iconSecondary])
-      }
-      .width('100%')
+        SymbolGlyph(Icons.upload).fontSize(Layout.iconM).fontColor([Theme.iconSecondary])
+        Text('导入对话历史').fontSize(Layout.fontUi).fontColor(Theme.textPrimary).layoutWeight(1)
+        SymbolGlyph(this.importOpen ? Icons.chevronUp : Icons.chevronDown).fontSize(Layout.iconM).fontColor([Theme.iconSecondary])
+      }.width('100%')
       .onClick(() => {
         this.importOpen = !this.importOpen;
       })
 
       if (this.importOpen) {
         Row({ space: Layout.s2 }) {
-          TextInput({ text: this.importPath, placeholder: '压缩包路径' })
-            .fontSize(Layout.fontUi)
-            .height(36)
-            .layoutWeight(1)
-            .backgroundColor(Theme.bgPage)
-            .borderRadius(Layout.radiusM)
-            .padding({ left: Layout.s3, right: Layout.s3 })
+          TextInput({ text: this.importPath, placeholder: '压缩包路径' }).fontSize(Layout.fontUi).height(36).layoutWeight(1).backgroundColor(Theme.bgPage).borderRadius(Layout.radiusM).padding({ left: Layout.s3, right: Layout.s3 })
             .onChange((value: string) => {
               this.importPath = value;
             })
-          Text(this.importBusy ? '导入中' : '导入')
-            .fontSize(Layout.fontSmall)
-            .fontColor(Theme.textOnBrand)
-            .padding({ left: Layout.s3, right: Layout.s3, top: 6, bottom: 6 })
-            .borderRadius(Layout.radiusM)
-            .backgroundColor(Theme.brand)
+          Text(this.importBusy ? '导入中' : '导入').fontSize(Layout.fontSmall).fontColor(Theme.textOnBrand).padding({ left: Layout.s3, right: Layout.s3, top: 6, bottom: 6 }).borderRadius(Layout.radiusM).backgroundColor(Theme.brand)
             .onClick(() => {
               this.importZip();
             })
-        }
-        .width('100%')
+        }.width('100%')
       }
-    }
-    .width('100%')
-    .padding(Layout.s3)
-    .backgroundColor(Theme.bgSurface)
-    .borderRadius(Layout.radiusL)
-    .border({ width: 1, color: Theme.border })
+    }.width('100%').padding(Layout.s3).backgroundColor(Theme.bgSurface).borderRadius(Layout.radiusL).border({ width: 1, color: Theme.border })
   }
 
   @Builder
   indexCard() {
     Row({ space: Layout.s3 }) {
-      SymbolGlyph(Icons.database)
-        .fontSize(Layout.iconM)
-        .fontColor([Theme.iconSecondary])
-      Text('重建检索索引')
-        .fontSize(Layout.fontUi)
-        .fontColor(Theme.textPrimary)
-        .layoutWeight(1)
-      Text(this.indexBusy ? '进行中' : (this.indexText.length > 0 ? this.indexText : '重建'))
-        .fontSize(Layout.fontSmall)
-        .fontColor(Theme.textSecondary)
-        .padding({ left: Layout.s3, right: Layout.s3, top: 6, bottom: 6 })
-        .borderRadius(Layout.radiusM)
-        .backgroundColor(Theme.bgPage)
+      SymbolGlyph(Icons.database).fontSize(Layout.iconM).fontColor([Theme.iconSecondary])
+      Text('重建检索索引').fontSize(Layout.fontUi).fontColor(Theme.textPrimary).layoutWeight(1)
+      Text(this.indexBusy ? '进行中' : (this.indexText.length > 0 ? this.indexText : '重建')).fontSize(Layout.fontSmall).fontColor(Theme.textSecondary).padding({ left: Layout.s3, right: Layout.s3, top: 6, bottom: 6 }).borderRadius(Layout.radiusM).backgroundColor(Theme.bgPage)
         .onClick(() => {
           this.rebuildIndex();
         })
-    }
-    .width('100%')
-    .padding(Layout.s3)
-    .backgroundColor(Theme.bgSurface)
-    .borderRadius(Layout.radiusL)
-    .border({ width: 1, color: Theme.border })
+    }.width('100%').padding(Layout.s3).backgroundColor(Theme.bgSurface).borderRadius(Layout.radiusL).border({ width: 1, color: Theme.border })
   }
 
   build() {
     Scroll() {
       Column({ space: Layout.s3 }) {
         this.statusLine()
+        this.hapticCard()
         this.lanCard()
         this.notifyCard()
         this.exportCard()
@@ -437,14 +378,7 @@ export struct SettingsDataView {
             }
           })
         }
-      }
-      .width('100%')
-      .padding({ left: Layout.pagePadding, right: Layout.pagePadding, top: Layout.s3, bottom: Layout.s8 })
-      .alignItems(HorizontalAlign.Start)
-    }
-    .width('100%')
-    .height('100%')
-    .align(Alignment.Top)
-    .scrollBar(BarState.Off)
+      }.width('100%').padding({ left: Layout.pagePadding, right: Layout.pagePadding, top: Layout.s3, bottom: Layout.s8 }).alignItems(HorizontalAlign.Start)
+    }.width('100%').height('100%').align(Alignment.Top).scrollBar(BarState.Off)
   }
 }

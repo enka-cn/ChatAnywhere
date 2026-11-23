@@ -1003,3 +1003,117 @@ warnings 仍为 `ArkTS:WARN Function may throw exceptions.`（平台 API 建议�
 - **契约**：`ModelCatalogApi.unregister` / `ModelCatalog.unregister` / `AppServices.clearActiveProfile` 已登记；`ChatRuntimeApi`/`ChatRuntime` 未动；main_pages 4 页；颜色仍 48 键。
 - **缺陷**：本轮**未发现需要修复的缺陷**。
 - **残余**：真机退场流畅度/左滑跟手/能量槽手感/取消真实链路仍需按 §17.7 冒烟；无真机前不得宣布 v3.4 交互修复闭环达成。
+
+---
+
+## 18. v3.5 交互修复验收（抽屉零闪变 / 暗舱能量面板 / 震动总开关）
+
+> 验收人：`qa-verify`；数据快照：构建 2026-11-23 11:30:53–11:31:44；用例 2026-11-23 11:30:43（Asia/Shanghai）。
+> 范围（task-33/34）：① 抽屉关闭闪变 → 常驻挂载 + 240ms 进出场；② 6 档面板硬切色块 → 深空暗舱卡；③ 新增触感震动总开关（HapticUtil + 设置页 Toggle）。
+> **验证前提不变**：无真机联调（无设备 / 无 API Key）；验证 = ArkTS 编译期类型检查 + 纯逻辑单测 + v3.5 静态断言 + 代码审查。
+> 构建配置两态：工作区保留本机签名（`skip-worktree` 隐藏），仓库 HEAD 已脱敏（`signingConfigs: []`）。
+
+### 18.1 改动面（git 工作区）
+
+v3.5 应用范围 = 8 个已跟踪文件（5 chat + `SettingsKeys` + 2 色资源）+ README/DEV_GUIDE 文档：
+
+| 文件 | 变化 |
+| --- | --- |
+| `pages/ChatPage.ets` | 新增 `@State drawerVisible`；`setDrawerOpen` 改 240ms `FastOutSlowIn`（打开先 `Visible` 再 animateTo；关闭在 `onFinish` 里才置 `None`）；**删除** `if (!this.unfolded && this.drawerOpen)` 与抽屉 `TransitionEffect`；遮罩/抽屉层常驻挂载（`.opacity(drawerOpen?1:0)` / `.translate({ x: (drawerOpen?0:-Layout.drawerMaxWidth)+drawerDragX })` + `visibility(drawerVisible?Visible:None)`），右空白点击 + 左滑 48vp 保留，9 处调用收口 |
+| `components/ReasoningEffortPanel.ets` | 重做（456 行/418 非空）：`effortDeckTop→effortDeckBottom` 深空渐变 + 圆角 20 + 档位细边；删除硬切色块改右上 `radialGradient` 氛围光（0.02–0.28 随档）；顶部图标 + dim 小字 + 26vp 亮白档位大字 + 6 格阶梯能量柱；14vp 内边距、8vp 轨道、6 刻度微点、22vp 白钮 + 8vp 档位色圆点 + 光晕；onTouch 吸附；震动改 `HapticUtil.vibrate`（删除 SensorServiceKit 直接 import） |
+| `app/HapticUtil.ets`（新增，64 行） | `init/isReady/isEnabled/setEnabled/vibrate`；内存缓存 + 默认开启 + try/catch 静默 |
+| `app/AppServices.ets` | 启动 `await HapticUtil.init(this.model.repo)` |
+| `components/SettingsDataView.ets` | 「跨端与数据」首卡新增「触感震动反馈」品牌蓝 Toggle（初值持久化回显、切换即时静音、失败回滚 + 状态提示） |
+| `packages/core_model/interfaces/SettingsKeys.ets` | 新增 `HAPTIC_ENABLED = 'haptic.enabled'` |
+| `resources/{base,dark}/element/color.json` | 各 **54 键**（新增 6 个 `effort_*`：deck_top `#11131B`、deck_bottom `#181C28`、track `#232836`、bar_off `#2A2F3D`、text_dim `#9CA3AF`、text_bright `#FFFFFF`） |
+| `app/Theme.ets` | 新增 6 个 `effort*` 令牌访问器 |
+
+### 18.2 构建矩阵（工作区本机签名态触发 unsigned 回退；仓库态脱敏）
+
+| 目标 | 结果 | 开始时间 | 日志 | 备注 |
+| --- | --- | --- | --- | --- |
+| `core_model` | **BUILD-OK** | 11:30:53 | `build-logs/core_model-20261123-113053.log` | 0 error / 30 warning |
+| `core_protocol` | **BUILD-OK** | 11:31:05 | `build-logs/core_protocol-20261123-113106.log` | 0 error / 32 warning |
+| `core_context` | **BUILD-OK** | 11:31:18 | `build-logs/core_context-20261123-113119.log` | 0 error / 30 warning |
+| `core_plugin` | **BUILD-OK** | 11:31:30 | `build-logs/core_plugin-20261123-113131.log` | 0 error / 33 warning |
+| `chat`（entry HAP，含全部 HAR） | **BUILD-OK [unsigned verification]** | 11:31:44 | `build-logs/all-20261123-113144-unsigned.log` | 0 error / 30 warning；工作区本机签名报 `11014003` → 脚本临时跳过签名重试并自动恢复 |
+
+| 构建配置两态 | 证据 |
+| --- | --- |
+| 工作区（本机签名） | `build-profile.json5` SHA256 构建前 = 后 = `0259B43A…35C665`（2448B）；`skip-worktree` 隐藏，不提交 |
+| 仓库 HEAD（公开脱敏） | `git show HEAD:build-profile.json5`：`signingConfigs: []`、无 certpath/keyPassword/storePassword/用户路径、product 保留 `"signingConfig": "default"` |
+| 本机材料备份 | `build-profile.local.json5` 存在且被 `.gitignore` 忽略 |
+
+warnings 仍为 `ArkTS:WARN Function may throw exceptions.`（平台 API 建议提示），0 error。
+
+### 18.3 用例统计（最终）
+
+| 指标 | 值 |
+| --- | --- |
+| 运行时间 | **2026-11-23 11:30:43** |
+| 用例文件 | **33 个** |
+| 断言级用例 | **493 条** |
+| 通过 / 失败 / 跳过 | **493 / 0 / 0** |
+| 结果 | `RESULT: PASS`（`run.ps1` 退出码 0） |
+| prepare 产物 | 拷贝 51 个纯逻辑文件；跳过 5；未命中 1；0 告警 |
+
+基线更新（仅测试侧）：`90/91/92/93/94` 色键 **48 → 54**（含 6 个 `effort_*` 断言）；`93/94` 抽屉断言改为 v3.5 口径（常驻挂载 `drawerVisible`/`Visibility`/opacity/translate 表达式/`onFinish`/无 `if` 卸载/区块无 `TransitionEffect`，`drawerOpen` 赋值 2 处、`setDrawerOpen` 调用 ≥9）；`93/94` 面板断言改 v3.5（effort 令牌、radialGradient、22vp/8vp 圆钮、HapticUtil、无 SensorServiceKit）；**新增 `95-design-v35-static.test.mjs`**（6 条）。
+
+### 18.4 三项修复证据（`95` 6/6 + 更新后的 `93/94` 通过）
+
+| 项 | 证据（文件:行/数量） |
+| --- | --- |
+| ① 抽屉零闪变（常驻挂载） | `ChatPage.ets:193 @State drawerVisible`；`setDrawerOpen`(:504)：打开分支 `drawerDragX=0` + `drawerVisible=true` + `animateTo({ duration: 240, curve: FastOutSlowIn })`(:508)；关闭分支 `animateTo({ duration:240, curve:FastOutSlowIn, onFinish: () => { if (!this.drawerOpen) this.drawerVisible = false; } })`(:513–519)；抽屉区块（`:1784` 起注释后 **无 if 包裹**）：遮罩 `.opacity(this.drawerOpen ? 1 : 0)`(:1806) + `visibility(drawerVisible?Visible:None)`(:1808) + 点击关闭；抽屉层 `.translate({ x: (this.drawerOpen ? 0 : -Layout.drawerMaxWidth) + this.drawerDragX })`(:1829) + `visibility(...)`(:1830) + 右空白 `layoutWeight(1)` 点击关闭 + `PanGesture` `-48`；全文件**无** `if (!this.unfolded && this.drawerOpen)`；抽屉区块 `TransitionEffect` **0 处**；`setDrawerOpen` 调用 **9 处**、`drawerOpen` 直接赋值 **2 处**（均在 setDrawerOpen 内） |
+| ② 暗舱能量面板 | `ReasoningEffortPanel.ets`（456 行/418 非空）：6 个 `Theme.effort*` 令牌（`:41–46` Theme 访问器；面板 `Theme.effortDeckTop/Bottom/Track/BarOff/TextDim/TextBright` 全部出现）；`radialGradient(` 氛围光；**无 `Slider(`**、**无 `height('100%')`**、0 硬编码色；`KNOB_SIZE: number = 22`（22vp 白钮 `Circle`) + 中心 8vp 档位色圆点；8vp 轨道 + 6 刻度微点；`onTouch(`/`onAreaChange(` 吸附；6 格 `ForEach(EffortLevels.ALL)` 能量柱；`HapticUtil.vibrate` 触感；**不再 import `@kit.SensorServiceKit`** |
+| ③ 震动总开关 | `HapticUtil.ets` 64 行：`HAPTIC_ENABLED`、`private static enabled: boolean = true`、`init` 读持久化、`isReady/isEnabled/setEnabled/vibrate`、内存缓存、vibrate 先查总开关、try/catch + `.catch()` 静默；`AppServices.ets:105 await HapticUtil.init(this.model.repo)`；`SettingsDataView.ets` 触感 Toggle（`:11` import、`:60` 读 `HAPTIC_ENABLED`、`:63` 回显 `HapticUtil.isEnabled()`、`:68 toggleHaptic`、`:71 HapticUtil.setEnabled`、`:248 Toggle`）；`SettingsKeys.ets:23 HAPTIC_ENABLED = 'haptic.enabled'` |
+| 颜色 | base/dark 各 **54 键**（v3.5 指纹：base `F2AC0998CC5A3208`、dark `C1454749E5322E3C`），6 个 effort_* 精确值如上；既有 violet/pink 保留；无其他新色 |
+
+### 18.5 静态断言总览
+
+| 文件 | 结果 | 覆盖 |
+| --- | --- | --- |
+| `95-design-v35-static` | **6/6 PASS** | 常驻挂载/240ms+onFinish、暗舱面板、HapticUtil 总开关、设置页 Toggle、54 色键、纪律 |
+| `94-design-v34-static` | **6/6 PASS** | v3.4 基线上移 54 色键 + v3.5 抽屉/面板口径 |
+| `93-design-v33-static` | **6/6 PASS** | v3.3 基线上移 54 色键 + v3.5 抽屉/面板口径 |
+| `92-design-v32-static` | **11/11 PASS** | v3.2 根因 + 头像 + 54 色键 + git HEAD 脱敏 |
+| `91-design-v3-static` | **15/15 PASS** | v3/v3.1 设计基线 + 54 色键（violet/pink/effort 精确断言） |
+| `90-refactor-static` | **11/11 PASS** | 54 色键/20 interfaces/git HEAD 脱敏/入口/L3/虚列表/行数 |
+| 合计 | **55/55 PASS** | — |
+
+### 18.6 契约 / 回归
+
+| 项 | 证据 |
+| --- | --- |
+| `core_model` 本轮新增能力（已登记） | `interfaces/SettingsKeys.ets` 11-23 11:23:07 `B091D329F30C3574`（+`HAPTIC_ENABLED`）；`Index.ets` 未变（`EFB010538B6C3B28`） |
+| chat 新增/改动（已登记） | `app/HapticUtil.ets` 新增 `C10E13734B28E187`；`AppServices.ets` 11-23 11:23:24 `2A7C715C338C2A91`（+HapticUtil.init）；`SettingsDataView.ets` `D50675D83E55EE95`；`ReasoningEffortPanel.ets` `F4BA1A72CEAE003E` |
+| `core_protocol` 未变 | 最新 mtime 仍 v3.4：`ModelCatalog.ets` 11-23 10:57:44（`unregister` 等已登记） |
+| 未改动 | `ChatRuntimeApi.ets` 仍 `BBEC5EB0320C5919`（11-20 17:38:13）；`core_context` 11-19、`core_plugin` 11-20 17:41:45；`main_pages` 4 页 |
+| 行数约束 | `ChatRuntime` 非空 338；`SessionController` 409、`StreamTurnExecutor` 401（≤500）；面板 418 非空（与 Lead 述 418 行一致，UI 组件无 500 限制） |
+| 跨轮回归 | R1→v3.4 全量保持绿（493/493）；v3.4 取消链路/四态胶囊/Haptic 无关断言全部保留通过 |
+
+### 18.7 未覆盖项与风险
+
+| # | 风险/未覆盖 | 说明 |
+| --- | --- | --- |
+| 1 | **无真机联调仍成立** | 抽屉零闪变观感（常驻挂载 + Visibility None 是否彻底消除闪变）、240ms FastOutSlowIn 进出场曲线、左滑跟手回弹、暗舱深空对比度/氛围光/亮白档位字、22vp 白钮与 8vp 圆点跟手、6 格柱点亮观感均未设备验证 |
+| 2 | **震动总开关实测** | 关闭 Toggle 后滑条是否完全无震、重进设置是否保持关闭、失败回滚提示；马达/权限差异行为需真机确认 |
+| 3 | **无 API Key** | 与模型添加/取消相关的真实链路（非本轮改动，但同屏联动）未联调 |
+| 4 | 构建配置两态 | 工作区本机签名 CLI 报 `11014003`（走 unsigned 回退）；仓库 HEAD 已脱敏但**未产出可安装签名包** |
+| 5 | 面板尺寸记录 | 面板总 456 行 / 非空 418 行（Lead 述 418 按非空行口径一致） |
+| 6 | 咨询类 warning | 模块重编译 30–33 条 `Function may throw exceptions`，0 error |
+| 7 | 静态门禁基线 | 54 色键/6 effort 令牌/240ms/22vp·8vp 圆钮/常驻挂载写法为当前基线，后续调整需同步更新断言 |
+
+**建议真机冒烟清单（v3.5 重点）**：
+1. **抽屉零闪变**：折叠态反复快速开/关抽屉 10 次：打开 240ms 平滑拉出、关闭 240ms 平滑收起且**无闪白/闪黑**；关闭动画期间遮罩与抽屉同步淡出、不提前消失；左滑跟手松手回弹；三入口（遮罩/右空白/左滑 48vp）均正常。
+2. **暗舱面板**：打开模型胶囊 → 思考强度面板：深空渐变卡 + 右上氛围光随档位由灭到亮、26vp 亮白档位大字、右上 6 格能量柱逐格点亮；拖动能量槽 6 档吸附、白钮+档位色圆点跟手、光晕只在非 off 出现；面板自然高度贴底部安全区；无 Slider。
+3. **震动开关**：设置→跨端与数据→「触感震动反馈」：默认开 → 关闭后立即去滑条确认无震动 → 退出设置重进仍为关闭 → 再开启恢复；断网/存储异常时切换失败有提示且状态回滚。
+4. **回归**：抽屉、四态模型胶囊取消、能量槽、角色头像、记忆卡、SKILL.md 等 v3/v3.1/v3.2/v3.3/v3.4 功能无回归。
+
+### 18.8 结论
+
+- **构建**：最终快照（11:30:53–11:31:44）5/5 BUILD-OK，0 error；工作区本机签名触发 unsigned 回退且恢复无损（工作区 SHA256 前后一致 `0259B43A…`），仓库 HEAD 已脱敏（`signingConfigs: []`）。
+- **用例**：**33 文件 / 493 断言全绿**（0 失败 / 0 跳过）；prepare 51 拷贝/0 告警。
+- **v3.5 三项修复**静态证据齐全：抽屉常驻挂载（drawerVisible + Visibility + opacity/translate 表达式 + 240ms FastOutSlowIn + onFinish，无 if 卸载/TransitionEffect）；暗舱面板（6 effort 令牌 + radialGradient + 22vp/8vp 圆钮 + 6 格柱 + HapticUtil，无 Slider/SensorServiceKit/硬编码色）；震动总开关（HapticUtil 持久化 + 设置页 Toggle + 失败回滚）。
+- **契约**：`SettingsKeys.HAPTIC_ENABLED` / `HapticUtil` / `AppServices.doInit` 已登记；`ChatRuntimeApi`/`ChatRuntime` 未动；main_pages 4 页；颜色 54 键。
+- **缺陷**：本轮**未发现需要修复的缺陷**。
+- **残余**：真机零闪变/曲线/暗舱对比度/滑条手感/震动开关实测仍需按 §18.7 冒烟；无真机前不得宣布 v3.5 交互修复闭环达成。

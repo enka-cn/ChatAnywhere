@@ -25,6 +25,7 @@ import { ContextLayer, PersonaPreset, createContextLayer } from '@app/core_conte
 import { PluginLayer, createPluginLayer } from '@app/core_plugin';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { PersonaStore } from './PersonaStore';
+import { HapticUtil } from './HapticUtil';
 import { EffortLevels } from './EffortLevels';
 
 const DOMAIN: number = 0x1A2B;
@@ -97,6 +98,14 @@ export class AppServices {
       hilog.error(DOMAIN, TAG, 'model layer failed: %{public}s', (e as Error).message);
       this.initPromise = null;
       return;
+    }
+
+    // 触感开关初始化：失败不影响应用启动（保持默认开启）
+    try {
+      await HapticUtil.init(this.model.repo);
+      hilog.info(DOMAIN, TAG, 'haptic util ready');
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'haptic util init failed: %{public}s', (e as Error).message);
     }
 
     try {

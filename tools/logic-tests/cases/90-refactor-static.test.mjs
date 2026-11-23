@@ -186,20 +186,26 @@ test('视觉：SymbolGlyph 使用点 ≥60，且 app/Theme.ets 被 ≥15 个 UI 
 // ---------------------------------------------------------------------------
 // 7) 深浅色资源键集合一致
 // ---------------------------------------------------------------------------
-test('资源：base/dark color.json 键集合一致（v3.3 各 48 键）', () => {
+test('资源：base/dark color.json 键集合一致（v3.5 各 54 键）', () => {
   const base = JSON.parse(read(path.join(RES, 'base', 'element', 'color.json')));
   const dark = JSON.parse(read(path.join(RES, 'dark', 'element', 'color.json')));
   assert.ok(Array.isArray(base.color) && Array.isArray(dark.color), 'color.json 结构异常');
   const bk = base.color.map((c) => c.name);
   const dk = dark.color.map((c) => c.name);
   assert.deepEqual(bk, dk, '深浅色资源键集合不一致');
-  assert.equal(bk.length, 48, `颜色键数量 ${bk.length} ≠ 48（v3.3 设计令牌基线：40 + 8 头像底色）`);
+  assert.equal(bk.length, 54, `颜色键数量 ${bk.length} ≠ 54（v3.5 设计令牌基线：48 + 6 暗舱 effort_*）`);
   assert.ok(bk.includes('brand') && bk.includes('bg_page') && bk.includes('text_primary'),
     '缺少关键语义色（brand/bg_page/text_primary）');
-  assert.ok(bk.includes('violet') && bk.includes('pink'), 'v3.3 缺少 violet/pink 色键');
+  assert.ok(bk.includes('violet') && bk.includes('pink'), '缺少 violet/pink 色键');
   const avatarTones = bk.filter((name) => name.startsWith('avatar_bg_'));
   assert.equal(avatarTones.length, 8, `avatar_bg_* 数量 ${avatarTones.length} ≠ 8`);
-  console.log(`  证据：base=${bk.length} 键 / dark=${dk.length} 键，集合完全一致（含 violet/pink + 8 个 avatar_bg_*）`);
+  const effortKeys = ['effort_deck_top', 'effort_deck_bottom', 'effort_track', 'effort_bar_off',
+    'effort_text_dim', 'effort_text_bright'];
+  for (const key of effortKeys) {
+    assert.ok(bk.includes(key), `base 缺少 v3.5 暗舱色键 ${key}`);
+    assert.ok(dk.includes(key), `dark 缺少 v3.5 暗舱色键 ${key}`);
+  }
+  console.log(`  证据：base=${bk.length} 键 / dark=${dk.length} 键，集合完全一致（含 violet/pink + 8 avatar_bg_* + 6 effort_*）`);
 });
 
 // ---------------------------------------------------------------------------

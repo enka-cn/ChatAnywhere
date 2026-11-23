@@ -189,6 +189,8 @@ struct ChatPage {
   @State private unfolded: boolean = false;
   @State private sidebarCollapsed: boolean = false;
   @State private drawerOpen: boolean = false;
+  /** 抽屉节点是否常驻可见（退场动画结束后才置 false，避免 if 卸载闪变）。 */
+  @State private drawerVisible: boolean = false;
   /** 折叠抽屉左滑关闭的实时位移（<=0，松手归零）。 */
   @State private drawerDragX: number = 0;
   @State private sourcePaneOpen: boolean = false;
@@ -494,15 +496,30 @@ struct ChatPage {
   // -------------------------------------------------------------------------
 
   /**
-   * 折叠抽屉开关（统一入口，保证退场动画）。
+   * 折叠抽屉开关（统一入口；GPU 常驻挂载 + 240ms 进出场，关闭零闪变）。
    *
-   * `if` 的直接子节点上挂 transition 时，状态变化必须包在 animateTo 里，
-   * 否则节点会立即销毁、退场动画不播放。打开前先把左滑位移归零。
+   * 打开：先 Visible，再 animateTo 拉开；
+   * 关闭：animateTo 收起的 onFinish 里才置 None，组件树全程不卸载。
    */
   private setDrawerOpen(open: boolean): void {
-    this.drawerDragX = 0;
-    this.getUIContext().animateTo({ duration: 220, curve: Curve.EaseOut }, () => {
-      this.drawerOpen = open;
+    if (open) {
+      this.drawerDragX = 0;
+      this.drawerVisible = true;
+      this.getUIContext().animateTo({ duration: 240, curve: Curve.FastOutSlowIn }, () => {
+        this.drawerOpen = true;
+      });
+      return;
+    }
+    this.getUIContext().animateTo({
+      duration: 240,
+      curve: Curve.FastOutSlowIn,
+      onFinish: () => {
+        if (!this.drawerOpen) {
+          this.drawerVisible = false;
+        }
+      }
+    }, () => {
+      this.drawerOpen = false;
     });
   }
 
@@ -1781,48 +1798,47 @@ struct ChatPage {
       .height('100%')
       .backgroundColor(Theme.bgPage)
 
-      // 折叠态会话抽屉：if 只有两个直接子节点，transition 必须挂在它们身上才会播放退场动画。
-      if (!this.unfolded && this.drawerOpen) {
-        // ① 遮罩：淡入淡出 + 点击关闭
+      // 折叠态会话抽屉：常驻挂载（GPU 层动画，不做 if 卸载，关闭零闪变）。
+      // ① 遮罩：opacity 0→1；不可见时 visibility None 不拦截事件。
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor(Theme.scrim)
+        .opacity(this.drawerOpen ? 1 : 0)
+        .visibility(this.drawerVisible ? Visibility.Visible : Visibility.None)
+        .onClick(() => {
+          this.setDrawerOpen(false);
+        })
+      // ② 抽屉层：translate 跟随 drawerOpen/drawerDragX；右空白点击关闭 + 左滑 48vp 关闭。
+      Row() {
+        Column() {
+          this.drawerForFolded()
+        }
+        .width('78%')
+        .constraintSize({ maxWidth: Layout.drawerMaxWidth })
+        .height('100%')
         Column()
-          .width('100%')
+          .layoutWeight(1)
           .height('100%')
-          .backgroundColor(Theme.scrim)
-          .transition(TransitionEffect.OPACITY.animation({ duration: 220, curve: Curve.EaseOut }))
           .onClick(() => {
             this.setDrawerOpen(false);
           })
-        // ② 抽屉层：整层左右移动（左滑跟手），右侧空白点击关闭
-        Row() {
-          Column() {
-            this.drawerForFolded()
-          }
-          .width('78%')
-          .constraintSize({ maxWidth: Layout.drawerMaxWidth })
-          .height('100%')
-          Column()
-            .layoutWeight(1)
-            .height('100%')
-            .onClick(() => {
-              this.setDrawerOpen(false);
-            })
-        }
-        .width('100%')
-        .height('100%')
-        .translate({ x: this.drawerDragX })
-        .transition(TransitionEffect.move(TransitionEdge.START).animation({ duration: 220, curve: Curve.EaseOut }))
-        .gesture(PanGesture({ direction: PanDirection.Left, distance: 8 })
-          .onActionUpdate((e: GestureEvent) => {
-            this.drawerDragX = Math.min(0, e.offsetX);
-          })
-          .onActionEnd((e: GestureEvent) => {
-            const shouldClose: boolean = e.offsetX < -48;
-            this.drawerDragX = 0;
-            if (shouldClose) {
-              this.setDrawerOpen(false);
-            }
-          }))
       }
+      .width('100%')
+      .height('100%')
+      .translate({ x: (this.drawerOpen ? 0 : -Layout.drawerMaxWidth) + this.drawerDragX })
+      .visibility(this.drawerVisible ? Visibility.Visible : Visibility.None)
+      .gesture(PanGesture({ direction: PanDirection.Left, distance: 8 })
+        .onActionUpdate((e: GestureEvent) => {
+          this.drawerDragX = Math.min(0, e.offsetX);
+        })
+        .onActionEnd((e: GestureEvent) => {
+          const shouldClose: boolean = e.offsetX < -48;
+          this.drawerDragX = 0;
+          if (shouldClose) {
+            this.setDrawerOpen(false);
+          }
+        }))
     }
     .width('100%')
     .height('100%')

@@ -40,34 +40,40 @@ const chatFiles = walk(CHAT_ETS, /\.(ets|ts)$/);
 // ---------------------------------------------------------------------------
 // 1) 抽屉关闭：右空白可点容器（替代装饰 Blank） + 左滑手势 + scrim
 // ---------------------------------------------------------------------------
-test('抽屉关闭：右空白可点容器（layoutWeight(1)）+ 左滑 -48 + 退场动画（OPACITY/START）+ 单一 setDrawerOpen 收口', () => {
+test('抽屉零闪变：常驻挂载 + drawerVisible/Visibility + opacity/translate 表达式 + 240ms FastOutSlowIn + onFinish，无 if 卸载/TransitionEffect', () => {
   const chatPage = read(path.join(CHAT_ETS, 'pages', 'ChatPage.ets'));
+  assert.ok(chatPage.includes('private setDrawerOpen('), '缺少 setDrawerOpen(open) 统一入口');
+  const fnStart = chatPage.indexOf('private setDrawerOpen(');
+  const fnBody = chatPage.slice(fnStart, fnStart + 1400);
+  assert.ok(/duration:\s*240/.test(fnBody), 'setDrawerOpen 未使用 240ms');
+  assert.ok(fnBody.includes('FastOutSlowIn'), 'setDrawerOpen 未使用 FastOutSlowIn 曲线');
+  assert.ok(fnBody.includes('onFinish'), '关闭未在 onFinish 里置 None（会导致闪变）');
+  assert.ok(fnBody.includes('drawerVisible = true') && fnBody.includes('drawerVisible = false'),
+    'setDrawerOpen 未管理 drawerVisible Visible/None');
+  assert.ok(fnBody.includes('drawerOpen = true') && fnBody.includes('drawerOpen = false'),
+    'setDrawerOpen 未设置 drawerOpen');
+  assert.equal(count(chatPage, /this\.drawerOpen = /g), 2, 'drawerOpen 赋值应仅在 setDrawerOpen 内（open/close 各一处）');
+  assert.ok(count(chatPage, /this\.setDrawerOpen\(/g) >= 9, 'setDrawerOpen 调用点少于 9 处');
+
   const start = chatPage.indexOf('// 折叠态会话抽屉');
   assert.ok(start >= 0, 'ChatPage 缺少折叠态会话抽屉区块');
   const end = chatPage.indexOf('.bindSheet(', start);
   assert.ok(end > start, '无法定位抽屉区块结束位置');
   const block = chatPage.slice(start, end);
-
-  assert.ok(/\.layoutWeight\(1\)/.test(block), '抽屉右空白缺少 layoutWeight(1) 的可点容器（仍是装饰 Blank）');
-  assert.ok(!/Blank\(\)/.test(block), '抽屉 Row 内仍有仅装饰的 Blank()');
-  // v3.4：状态变化统一走 setDrawerOpen(false)（内含 animateTo，保证退场动画）
-  assert.ok(block.includes('this.setDrawerOpen(false)'), '抽屉缺少 setDrawerOpen(false) 关闭调用');
-  assert.ok(chatPage.includes('private setDrawerOpen('), '缺少 setDrawerOpen(open) 统一入口');
-  assert.ok(/getUIContext\(\)\.animateTo\(\{\s*duration:\s*220/.test(chatPage),
-    'setDrawerOpen 未用 animateTo({ duration: 220 }) 包裹状态变化（退场动画会不播放）');
-  assert.ok(block.includes('TransitionEffect.OPACITY'), '遮罩缺少 OPACITY 退场过渡');
-  assert.ok(/TransitionEffect\.move\(TransitionEdge\.START\)/.test(block), '抽屉层缺少 move(START) 退场过渡');
-  assert.ok(block.includes('PanGesture'), '抽屉缺少左滑 PanGesture');
-  assert.ok(/PanDirection\.Left/.test(block), 'PanGesture 未限定 Left 方向');
-  assert.ok(block.includes('-48'), '抽屉左滑关闭阈值缺少 -48');
-  assert.ok(block.includes('drawerDragX') && block.includes('.translate('),
-    '抽屉缺少 drawerDragX + translate 跟手位移');
-
-  // 三入口：scrim 点击 / 右空白点击 / 手势结束；drawerOpen 赋值应收口到 setDrawerOpen 一处
-  const closeEntries = count(block, /this\.setDrawerOpen\(false\)/g);
-  assert.ok(closeEntries >= 3, `抽屉关闭入口仅 ${closeEntries} 个（应 ≥3：scrim/右空白/手势）`);
-  assert.equal(count(chatPage, /this\.drawerOpen = /g), 1, 'drawerOpen 赋值未收口（应仅 setDrawerOpen 内一处）');
-  console.log(`  证据：setDrawerOpen 统一入口（animateTo 220ms）+ 遮罩 OPACITY/抽屉 move(START) + layoutWeight(1) 右空白点击 + PanGesture(-48)，关闭入口 ${closeEntries} 处、drawerOpen 赋值 1 处`);
+  assert.ok(block.includes('drawerVisible'), '抽屉区块缺少 drawerVisible 常驻挂载');
+  assert.ok(block.includes('Visibility.None') && block.includes('Visibility.Visible'),
+    '抽屉区块缺少 Visibility 显隐控制');
+  assert.ok(/\.opacity\(this\.drawerOpen \? 1 : 0\)/.test(block), '遮罩缺少 opacity(drawerOpen?1:0) 渐变');
+  assert.ok(/\.translate\(\{\s*x:\s*\(this\.drawerOpen \? 0 : -Layout\.drawerMaxWidth\)/.test(block),
+    '抽屉层缺少 translate(drawerOpen?0:-drawerMaxWidth + dragX) 表达式');
+  assert.ok(/\.layoutWeight\(1\)/.test(block), '右空白点击关闭容器丢失 layoutWeight(1)');
+  assert.ok(block.includes('this.setDrawerOpen(false)'), '抽屉关闭未走 setDrawerOpen(false)');
+  assert.ok(!/Blank\(\)/.test(block), '抽屉区块内出现装饰 Blank()');
+  assert.equal(count(block, /TransitionEffect/g), 0, 'v3.5 抽屉区块不应再有 TransitionEffect（改为常驻挂载）');
+  assert.ok(!chatPage.includes('if (!this.unfolded && this.drawerOpen)'),
+    '仍存在 if (!this.unfolded && this.drawerOpen) 卸载（会闪变）');
+  assert.ok(block.includes('PanGesture') && block.includes('-48'), '抽屉左滑关闭手势/阈值丢失');
+  console.log('  证据：drawerVisible+Visibility 常驻挂载、opacity/translate 表达式、setDrawerOpen 240ms FastOutSlowIn+onFinish、无 if 卸载/TransitionEffect；关闭入口 ≥3、调用点 ≥9');
 });
 
 // ---------------------------------------------------------------------------
@@ -77,15 +83,14 @@ test('6 档面板：ReasoningEffortPanel 含叠层品牌渐变/光环/徽章/振
   const panelPath = path.join(CHAT_ETS, 'components', 'ReasoningEffortPanel.ets');
   assert.ok(exists(panelPath), '缺少 components/ReasoningEffortPanel.ets');
   const panel = read(panelPath);
-  // 三层品牌色叠层渐变（bgInput + brand/violet/pink 依档位 opacity）
-  assert.ok(/linearGradient/i.test(panel) || (panel.includes('Theme.brand') && panel.includes('Theme.violet')
-    && panel.includes('Theme.pink') && count(panel, /\.backgroundColor\(Theme\./g) >= 4),
-    '面板缺少叠层品牌色渐变（brand/violet/pink）');
+  // 深空暗舱渐变（linearGradient 卡片底 + radialGradient 氛围光）
+  assert.ok(/linearGradient/i.test(panel) || /radialGradient/i.test(panel)
+    || (panel.includes('Theme.effortDeckTop') && panel.includes('Theme.effortDeckBottom')),
+    '面板缺少暗舱渐变（linearGradient/radialGradient/effortDeck）');
   assert.ok(panel.includes('Icons.sparkles') && panel.includes('Icons.thinking'),
     '面板缺少 sparkles/thinking 徽章图标');
-  assert.ok(panel.includes('Circle('), '面板缺少同心 Circle 呼吸光环');
-  assert.ok(panel.includes('vibrator.startVibration'), '面板缺少 vibrator.startVibration 触感');
-  assert.ok(/try\s*\{/.test(panel) && /catch\s*\(/.test(panel), '振动缺少 try/catch 兜底');
+  assert.ok(panel.includes('Circle('), '面板缺少同心 Circle 光环/圆钮');
+  assert.ok(panel.includes('HapticUtil.vibrate'), '面板触感未走 HapticUtil.vibrate（v3.5 总开关）');
   assert.equal(count(panel, /#[0-9A-Fa-f]{6,8}\b/g), 0, 'ReasoningEffortPanel 含硬编码色值');
 
   const capsule = read(path.join(CHAT_ETS, 'components', 'ModelCapsule.ets'));
@@ -132,19 +137,24 @@ test('模型页状态机：modelStatuses 数组 + setModelEnabled + loading→su
 });
 
 // ---------------------------------------------------------------------------
-// 4) Lead 基建：48 色键（violet/pink）、VIBRATE 权限、Theme 令牌
+// 4) Lead 基建：54 色键（violet/pink + 6 effort_*）、VIBRATE 权限、Theme 令牌
 // ---------------------------------------------------------------------------
-test('基建：color.json base/dark 各 48 键且含 violet/pink，module.json5 含 VIBRATE，Theme 暴露 violet/pink', () => {
+test('基建：color.json base/dark 各 54 键且含 violet/pink 与 6 个 effort_*，module.json5 含 VIBRATE，Theme 暴露令牌', () => {
   const load = (mode) => JSON.parse(read(path.join(RES, mode, 'element', 'color.json')));
   const base = load('base');
   const dark = load('dark');
   const bk = base.color.map((c) => c.name);
   const dk = dark.color.map((c) => c.name);
-  assert.equal(bk.length, 48, `base 颜色键 ${bk.length} ≠ 48`);
+  assert.equal(bk.length, 54, `base 颜色键 ${bk.length} ≠ 54（v3.5）`);
   assert.deepEqual([...bk].sort(), [...dk].sort(), '深浅色键集合不一致');
   for (const key of ['violet', 'pink']) {
     assert.ok(bk.includes(key), `base 缺少 ${key}`);
     assert.ok(dk.includes(key), `dark 缺少 ${key}`);
+  }
+  for (const key of ['effort_deck_top', 'effort_deck_bottom', 'effort_track', 'effort_bar_off',
+    'effort_text_dim', 'effort_text_bright']) {
+    assert.ok(bk.includes(key), `base 缺少 v3.5 暗舱色键 ${key}`);
+    assert.ok(dk.includes(key), `dark 缺少 v3.5 暗舱色键 ${key}`);
   }
   const baseViolet = base.color.find((c) => c.name === 'violet').value.toUpperCase();
   const darkViolet = dark.color.find((c) => c.name === 'violet').value.toUpperCase();
@@ -159,7 +169,11 @@ test('基建：color.json base/dark 各 48 键且含 violet/pink，module.json5 
   assert.ok(moduleJson.includes('ohos.permission.VIBRATE'), 'module.json5 缺少 VIBRATE 权限');
   const theme = read(path.join(CHAT_ETS, 'app', 'Theme.ets'));
   assert.ok(theme.includes('violet') && theme.includes('pink'), 'Theme.ets 未暴露 violet/pink 令牌');
-  console.log('  证据：48 键含 violet(#7C3AED/#8B5CF6)/pink(#EC4899/#F472B6)；module.json5 含 VIBRATE；Theme 暴露两令牌');
+  for (const key of ['effortDeckTop', 'effortDeckBottom', 'effortTrack', 'effortBarOff',
+    'effortTextDim', 'effortTextBright']) {
+    assert.ok(theme.includes(key), `Theme.ets 未暴露暗舱令牌 ${key}`);
+  }
+  console.log('  证据：54 键含 violet/pink + 6 effort_*；module.json5 含 VIBRATE；Theme 暴露暗舱令牌');
 });
 
 test('颜色/文案纪律覆盖新增组件：ReasoningEffortPanel + ModelProbeChip 无硬编码色值、无教学文案', () => {

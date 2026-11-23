@@ -37,6 +37,13 @@ export class Theme {
   static readonly danger: ResourceColor = $r('app.color.danger');
   static readonly dangerSubtle: ResourceColor = $r('app.color.danger_subtle');
   static readonly violet: ResourceColor = $r('app.color.violet');
+  // 思考强度暗舱（v3.5）
+  static readonly effortDeckTop: ResourceColor = $r('app.color.effort_deck_top');
+  static readonly effortDeckBottom: ResourceColor = $r('app.color.effort_deck_bottom');
+  static readonly effortTrack: ResourceColor = $r('app.color.effort_track');
+  static readonly effortBarOff: ResourceColor = $r('app.color.effort_bar_off');
+  static readonly effortTextDim: ResourceColor = $r('app.color.effort_text_dim');
+  static readonly effortTextBright: ResourceColor = $r('app.color.effort_text_bright');
   static readonly pink: ResourceColor = $r('app.color.pink');
   static readonly warning: ResourceColor = $r('app.color.warning');
   static readonly warningSubtle: ResourceColor = $r('app.color.warning_subtle');

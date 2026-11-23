@@ -171,15 +171,19 @@ test('角色二级列表与头像：PersonaProfile 含 avatarIcon/avatarTone，P
   console.log('  证据：PersonaProfile avatarIcon/avatarTone + sanitize 兼容；PersonaAvatars 10×8 + iconOf/toneOf；角色二级切换完整');
 });
 
-test('头像配色资源：base/dark 各 48 键且含 8 个 avatar_bg_* 与 violet/pink，深浅色一致', () => {
+test('头像配色资源：base/dark 各 54 键且含 8 个 avatar_bg_*、violet/pink 与 6 个 effort_*，深浅色一致', () => {
   const load = (mode) => JSON.parse(read(path.join(RES, mode, 'element', 'color.json')));
   const bk = load('base').color.map((c) => c.name);
   const dk = load('dark').color.map((c) => c.name);
-  assert.equal(bk.length, 48, `base 颜色键 ${bk.length} ≠ 48（v3.3：40 + 8 avatar_bg_*）`);
+  assert.equal(bk.length, 54, `base 颜色键 ${bk.length} ≠ 54（v3.5：48 + 6 effort_*）`);
   assert.deepEqual([...bk].sort(), [...dk].sort(), '深浅色键集合不一致');
   assert.equal(bk.filter((n) => n.startsWith('avatar_bg_')).length, 8, 'avatar_bg_* 不是 8 个');
-  assert.ok(bk.includes('violet') && bk.includes('pink'), '缺少 v3.3 新增 violet/pink 色键');
-  console.log('  证据：48 键（40 + 8 avatar_bg_* + violet/pink）base/dark 一致');
+  assert.ok(bk.includes('violet') && bk.includes('pink'), '缺少 violet/pink 色键');
+  for (const key of ['effort_deck_top', 'effort_deck_bottom', 'effort_track', 'effort_bar_off',
+    'effort_text_dim', 'effort_text_bright']) {
+    assert.ok(bk.includes(key), `缺少 v3.5 暗舱色键 ${key}`);
+  }
+  console.log('  证据：54 键（48 + 6 effort_*）base/dark 一致');
 });
 
 // ---------------------------------------------------------------------------

@@ -1,25 +1,29 @@
 /**
- * Codex 风格「思考强度」面板（v3.4 · 能量槽版）。
+ * Codex 风格「思考强度」面板（v3.5 · 深空暗舱版）。
  *
- * 用户真机反馈修复：
- * - 自然内容高度（不再撑满半模态），底部 28vp 预留，6 个刻度完整可见；
- * - 克制背景：卡片 bgSurface + 细边，只在顶部 56vp 铺一层柔和渐变光（off 几乎不可见），
- *   高档位边框过渡到 violet / pink，不再大面积平涂；
- * - 右上角 6 格阶梯能量柱（亮格数 = 档位）；
- * - 弃用原生 Slider，改手写「能量槽 + 白边发光圆钮」，支持拖动/点按吸附；
- * - 保留徽章呼吸光环（off 静止）、档位大字弹跳、跨档线性马达（try/catch 去抖）。
+ * 真机反馈修复：
+ * - 统一深空暗面（effortDeckTop → effortDeckBottom 竖向渐变，圆角 20，随档位微亮细边）；
+ * - 删除顶部硬切色块，改为右上角 radialGradient 柔和氛围光（0.12–0.28 随档位，off 近 0）；
+ * - 右上 6 格阶梯能量柱：暗底未亮 effortBarOff / 亮格 accent，xHigh 全亮微光；
+ * - 手写能量槽：8vp 轨道 effortTrack + 渐变光轨 + 6 枚对齐刻度微点；
+ *   22vp 纯白圆钮 + 中心 8vp 档位色圆点 + 柔和外发光（off 无光晕）；
+ * - 触感统一走 HapticUtil（设置总开关关闭即静音）。
  *
  * 颜色全部来自 Theme（禁止 hex），尺寸来自 Layout。
  */
-import { vibrator } from '@kit.SensorServiceKit';
 import { ThinkingLevel } from '@app/core_protocol';
 import { EffortLevels, EffortOption } from '../app/EffortLevels';
+import { HapticUtil } from '../app/HapticUtil';
 import { Icons, Layout, Theme } from '../app/Theme';
 
-/** 能量槽左右内边距（避免 18vp 圆钮溢出卡片）。 */
-const TRACK_PAD: number = 9;
+/** 滑条左右内边距（22vp 圆钮不贴边溢出）。 */
+const TRACK_PAD: number = 14;
+/** 轨道高度。 */
+const TRACK_HEIGHT: number = 8;
+/** 滑条组件总高度（容纳圆钮与外发光）。 */
+const TRACK_BOX_HEIGHT: number = 30;
 /** 圆钮直径。 */
-const KNOB_SIZE: number = 18;
+const KNOB_SIZE: number = 22;
 
 @Component
 export struct ReasoningEffortPanel {
@@ -27,15 +31,11 @@ export struct ReasoningEffortPanel {
   onSelect: (level: ThinkingLevel) => void = (level: ThinkingLevel) => {
   };
 
-  /** 光环呼吸缩放（off 静止）。 */
-  @State private pulseScale: number = 1;
-  /** 光环透明度。 */
-  @State private pulseOpacity: number = 0.24;
-  /** xHigh 能量柱微光透明度（其余档位为 1）。 */
+  /** xHigh 能量柱微光透明度（其余档位 1）。 */
   @State private barOpacity: number = 1;
   /** 档位大字弹跳缩放。 */
   @State private levelScale: number = 1;
-  /** 拖动中的临时档位（-1 表示未拖动，用 thinkingLevel）。 */
+  /** 拖动中的临时档位（-1 = 未拖动）。 */
   @State private previewIndex: number = -1;
   /** 能量槽实测宽度（vp）。 */
   @State private trackWidth: number = 0;
@@ -73,11 +73,11 @@ export struct ReasoningEffortPanel {
     return idx > EffortLevels.ALL.length - 1 ? EffortLevels.ALL.length - 1 : idx;
   }
 
-  /** 档位主色（大字 / 徽章 / 亮格 / 填充起点）。 */
+  /** 档位主色：off 用暗字色，min..med 品牌蓝，high 紫，xHigh 粉。 */
   private accent(): ResourceColor {
     const idx: number = this.activeIndex();
     if (idx <= 0) {
-      return Theme.textTertiary;
+      return Theme.effortTextDim;
     }
     if (idx >= 5) {
       return Theme.pink;
@@ -88,13 +88,7 @@ export struct ReasoningEffortPanel {
     return Theme.brand;
   }
 
-  /** 能量柱亮格数：off=0、min..high=index、xHigh 全亮 6 格。 */
-  private litCount(): number {
-    const idx: number = this.activeIndex();
-    return idx >= 5 ? 6 : idx;
-  }
-
-  /** 边框颜色：high 紫、xHigh 粉，其余常规细边。 */
+  /** 1vp 细边：off 常规边框，high 紫，xHigh 粉。 */
   private edgeColor(): ResourceColor {
     const idx: number = this.activeIndex();
     if (idx >= 5) {
@@ -106,102 +100,102 @@ export struct ReasoningEffortPanel {
     return Theme.border;
   }
 
-  /** 顶部柔光透明度：off 几乎不可见。 */
-  private glowOpacity(): number {
-    const idx: number = this.activeIndex();
-    if (idx <= 0) {
-      return 0.04;
-    }
-    if (idx === 1) {
-      return 0.22;
-    }
-    if (idx === 2) {
-      return 0.38;
-    }
-    if (idx === 3) {
-      return 0.52;
-    }
-    return idx === 4 ? 0.66 : 0.80;
-  }
-
-  /** 顶部柔光渐变色（accent → 透明）。 */
-  private glowColors(): Array<[ResourceColor, number]> {
-    const base: ResourceColor = this.activeIndex() <= 0 ? Theme.bgSurface3 : this.accent();
-    const colors: Array<[ResourceColor, number]> = [[base, 0.85], [base, 0.0]];
+  /** 深空暗面竖向渐变。 */
+  private deckColors(): Array<[ResourceColor, number]> {
+    const colors: Array<[ResourceColor, number]> = [
+      [Theme.effortDeckTop, 0],
+      [Theme.effortDeckBottom, 1]
+    ];
     return colors;
   }
 
-  /** 能量槽填充渐变色。 */
+  /** 右上角氛围光渐变（accent → 透明）。 */
+  private auraColors(): Array<[ResourceColor, number]> {
+    const accent: ResourceColor = this.activeIndex() <= 0 ? Theme.brand : this.accent();
+    const colors: Array<[ResourceColor, number]> = [[accent, 1], [accent, 0]];
+    return colors;
+  }
+
+  /** 氛围光中心（右上角）。 */
+  private auraCenter(): [Length, Length] {
+    const center: [Length, Length] = ['85%', '0%'];
+    return center;
+  }
+
+  /** 氛围光透明度：off 近 0，档位越高越亮（0.12–0.28）。 */
+  private auraAlpha(): number {
+    const idx: number = this.activeIndex();
+    if (idx <= 0) {
+      return 0.02;
+    }
+    if (idx === 1) {
+      return 0.12;
+    }
+    if (idx === 2) {
+      return 0.16;
+    }
+    if (idx === 3) {
+      return 0.20;
+    }
+    if (idx === 4) {
+      return 0.24;
+    }
+    return 0.28;
+  }
+
+  /** 能量柱亮格数：off=0、min..high=index、xHigh 全亮 6 格。 */
+  private litCount(): number {
+    const idx: number = this.activeIndex();
+    return idx >= 5 ? 6 : idx;
+  }
+
+  /** 滑条可用宽度（扣除左右内边距）。 */
+  private usableWidth(): number {
+    const usable: number = this.trackWidth - TRACK_PAD * 2;
+    return usable > 0 ? usable : 0;
+  }
+
+  private ratio(): number {
+    return this.activeIndex() / (EffortLevels.ALL.length - 1);
+  }
+
+  /** 圆钮圆心距轨道左端的距离（px）。 */
+  private knobCenterX(): number {
+    return TRACK_PAD + this.usableWidth() * this.ratio();
+  }
+
+  /** 光轨渐变：off 灰、min..med 品牌蓝、high 紫、xHigh 蓝→紫→粉。 */
   private fillColors(): Array<[ResourceColor, number]> {
     const idx: number = this.activeIndex();
     if (idx <= 0) {
-      const off: Array<[ResourceColor, number]> = [[Theme.textTertiary, 1], [Theme.textTertiary, 1]];
+      const off: Array<[ResourceColor, number]> = [[Theme.effortBarOff, 0], [Theme.effortBarOff, 1]];
       return off;
     }
     if (idx === 4) {
-      const high: Array<[ResourceColor, number]> = [[Theme.brand, 0], [Theme.violet, 1]];
+      const high: Array<[ResourceColor, number]> = [[Theme.violet, 0.55], [Theme.violet, 1]];
       return high;
     }
     if (idx >= 5) {
-      const max: Array<[ResourceColor, number]> = [[Theme.brand, 0], [Theme.violet, 0.55], [Theme.pink, 1]];
+      const max: Array<[ResourceColor, number]> = [[Theme.brand, 0.5], [Theme.violet, 1], [Theme.pink, 1]];
       return max;
     }
-    const basic: Array<[ResourceColor, number]> = [[Theme.brandSubtle, 0], [Theme.brand, 1]];
+    const basic: Array<[ResourceColor, number]> = [[Theme.brand, 0.45], [Theme.brand, 1]];
     return basic;
-  }
-
-  /** 圆钮左侧偏移（px）：让圆心落在 9 .. width-9 之间。 */
-  private knobOffset(): number {
-    const usable: number = this.trackWidth - TRACK_PAD * 2;
-    if (usable <= 0) {
-      return 0;
-    }
-    const ratio: number = this.activeIndex() / (EffortLevels.ALL.length - 1);
-    return usable * ratio;
-  }
-
-  /** 填充宽度（px）：从槽左端到圆钮圆心。 */
-  private fillWidth(): number {
-    const usable: number = this.trackWidth - TRACK_PAD * 2;
-    if (usable <= 0) {
-      return 0;
-    }
-    return TRACK_PAD + usable * (this.activeIndex() / (EffortLevels.ALL.length - 1));
   }
 
   // -------------------------------------------------------------------------
   // 动效 / 触感
   // -------------------------------------------------------------------------
 
-  /** 档位变化：重启呼吸光环（off 静止）与 xHigh 微光。 */
+  /** 档位变化：重启 xHigh 微光（其余档位复位）。 */
   onLevelChanged(): void {
     this.previewIndex = -1;
     this.lastCommitted = this.index();
-    this.startPulse();
+    this.startBarGlow();
   }
 
-  private startPulse(): void {
-    const idx: number = this.index();
-    if (idx <= 0) {
-      this.getUIContext().animateTo({ duration: 200, curve: Curve.EaseOut }, () => {
-        this.pulseScale = 1;
-        this.pulseOpacity = 0.24;
-        this.barOpacity = 1;
-      });
-      return;
-    }
-    const scaleTarget: number = 1.06 + idx * 0.045;
-    const opacityTarget: number = Math.max(0.05, 0.2 - idx * 0.024);
-    this.getUIContext().animateTo({
-      duration: 1400,
-      iterations: -1,
-      curve: Curve.EaseInOut,
-      playMode: PlayMode.Alternate
-    }, () => {
-      this.pulseScale = scaleTarget;
-      this.pulseOpacity = opacityTarget;
-    });
-    if (idx >= 5) {
+  private startBarGlow(): void {
+    if (this.index() >= 5) {
       this.getUIContext().animateTo({
         duration: 1200,
         iterations: -1,
@@ -210,11 +204,11 @@ export struct ReasoningEffortPanel {
       }, () => {
         this.barOpacity = 0.72;
       });
-    } else {
-      this.getUIContext().animateTo({ duration: 200, curve: Curve.EaseOut }, () => {
-        this.barOpacity = 1;
-      });
+      return;
     }
+    this.getUIContext().animateTo({ duration: 200, curve: Curve.EaseOut }, () => {
+      this.barOpacity = 1;
+    });
   }
 
   /** 跨档大字弹跳。 */
@@ -233,25 +227,16 @@ export struct ReasoningEffortPanel {
     }, 90);
   }
 
-  /** 线性马达：档位越高轻点越久；无硬件/权限时静默。 */
+  /** 触感：统一走 HapticUtil（设置总开关关闭时静音）；同档去抖。 */
   private vibrate(index: number): void {
     if (index <= 0 || index === this.lastVibrated) {
       return;
     }
     this.lastVibrated = index;
-    try {
-      const duration: number = 8 + index * 6;
-      const effect: vibrator.VibrateTime = { type: 'time', duration: duration };
-      const attribute: vibrator.VibrateAttribute = { id: 0, usage: 'touch' };
-      vibrator.startVibration(effect, attribute).catch(() => {
-        // 振动失败（无硬件/受限）不影响 UI
-      });
-    } catch (e) {
-      // 无振动能力时静默
-    }
+    HapticUtil.vibrate(8 + index * 6);
   }
 
-  /** 提交一个档位（index 真正变化才回调 onSelect）。 */
+  /** 提交档位：index 真正变化才回调 onSelect。 */
   private commitIndex(index: number): void {
     if (index < 0 || index > EffortLevels.ALL.length - 1) {
       return;
@@ -265,14 +250,14 @@ export struct ReasoningEffortPanel {
     this.onSelect(EffortLevels.byIndex(index).level);
   }
 
-  /** 触点 x → 0..5 档（考虑左右各 9vp 内边距）。 */
+  /** 触点 x → 0..5 档（考虑左右 14vp 内边距）。 */
   private indexFromX(x: number): number {
-    const usable: number = this.trackWidth - TRACK_PAD * 2;
+    const usable: number = this.usableWidth();
     if (usable <= 0) {
       return this.index();
     }
-    const ratio: number = Math.max(0, Math.min(1, (x - TRACK_PAD) / usable));
-    return Math.round(ratio * (EffortLevels.ALL.length - 1));
+    const r: number = Math.max(0, Math.min(1, (x - TRACK_PAD) / usable));
+    return Math.round(r * (EffortLevels.ALL.length - 1));
   }
 
   private handleTouch(event: TouchEvent): void {
@@ -294,33 +279,7 @@ export struct ReasoningEffortPanel {
   // 视图
   // -------------------------------------------------------------------------
 
-  /** 能量徽章 + 2 层同心光环（off 静止）。 */
-  @Builder
-  energyBadge() {
-    Stack({ alignContent: Alignment.Center }) {
-      Circle({ width: 44, height: 44 })
-        .fill(this.accent())
-        .opacity(this.activeIndex() <= 0 ? 0.10 : this.pulseOpacity)
-        .scale({ x: this.pulseScale, y: this.pulseScale })
-      Circle({ width: 32, height: 32 })
-        .fill(this.accent())
-        .opacity(this.activeIndex() <= 0 ? 0.16 : 0.22)
-      Stack({ alignContent: Alignment.Center }) {
-        SymbolGlyph(this.activeIndex() <= 0 ? Icons.thinking : Icons.sparkles)
-          .fontSize(Layout.iconM)
-          .fontColor([this.accent()])
-      }
-      .width(30)
-      .height(30)
-      .borderRadius(Layout.radiusPill)
-      .backgroundColor(Theme.bgSurface)
-    }
-    .width(48)
-    .height(48)
-    .animation({ duration: 260, curve: Curve.EaseInOut })
-  }
-
-  /** 右上角 6 格阶梯能量柱。 */
+  /** 右上角 6 格阶梯能量柱（暗底对比清晰）。 */
   @Builder
   energyBars() {
     Row({ space: 3 }) {
@@ -329,73 +288,105 @@ export struct ReasoningEffortPanel {
           .width(6)
           .height(8 + index * 2)
           .borderRadius(2)
-          .backgroundColor(index < this.litCount() ? this.accent() : Theme.bgSurface3)
+          .backgroundColor(index < this.litCount() ? this.accent() : Theme.effortBarOff)
           .opacity(index < this.litCount() ? this.barOpacity : 1)
           .animation({ duration: 220, curve: Curve.EaseInOut })
       }, (option: EffortOption) => `bar_${option.level}`)
     }
-    .height(24)
+    .height(26)
     .alignItems(VerticalAlign.Bottom)
   }
 
   @Builder
   headerRow() {
     Row({ space: Layout.s3 }) {
-      this.energyBadge()
+      Stack({ alignContent: Alignment.Center }) {
+        SymbolGlyph(this.activeIndex() <= 0 ? Icons.thinking : Icons.sparkles)
+          .fontSize(Layout.iconM)
+          .fontColor([this.accent()])
+      }
+      .width(34)
+      .height(34)
+      .borderRadius(Layout.radiusM)
+      .backgroundColor(Theme.effortTrack)
+      .animation({ duration: 260, curve: Curve.EaseInOut })
+
       Column({ space: 2 }) {
         Text('思考强度')
           .fontSize(Layout.fontUi)
           .fontWeight(FontWeight.Medium)
-          .fontColor(Theme.textSecondary)
+          .fontColor(Theme.effortTextDim)
           .width('100%')
         Text(EffortLevels.short(EffortLevels.byIndex(this.activeIndex()).level))
           .fontSize(Layout.fontHero)
           .fontWeight(FontWeight.Bold)
           .fontFamily('monospace')
-          .fontColor(this.accent())
+          .fontColor(Theme.effortTextBright)
           .scale({ x: this.levelScale, y: this.levelScale })
           .width('100%')
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
+
       this.energyBars()
     }
     .width('100%')
     .alignItems(VerticalAlign.Center)
   }
 
-  /** 手写能量槽：凹槽 + 渐变填充 + 白边发光圆钮。 */
+  /** 6 枚对齐刻度微点（均分在轨道上）。 */
+  @Builder
+  tickDots() {
+    ForEach(EffortLevels.ALL, (option: EffortOption, index: number) => {
+      Circle({ width: 3, height: 3 })
+        .fill(index <= this.activeIndex() ? Theme.effortTextBright : Theme.effortBarOff)
+        .opacity(index <= this.activeIndex() ? 0.75 : 0.6)
+        .position({
+          x: TRACK_PAD + this.usableWidth() * (index / (EffortLevels.ALL.length - 1)) - 1.5,
+          y: (TRACK_HEIGHT - 3) / 2
+        })
+    }, (option: EffortOption) => `dot_${option.level}`)
+  }
+
+  /** 手写能量槽：底槽 + 渐变光轨 + 刻度微点 + 白钮/档位色圆点/外发光。 */
   @Builder
   energyTrough() {
     Stack({ alignContent: Alignment.Start }) {
-      // 凹槽
+      // 底槽
       Row()
         .width('100%')
-        .height(10)
+        .height(TRACK_HEIGHT)
         .borderRadius(Layout.radiusPill)
-        .backgroundColor(Theme.bgInput)
-        .position({ x: 0, y: (KNOB_SIZE - 10) / 2 })
-      // 渐变填充
+        .backgroundColor(Theme.effortTrack)
+        .position({ x: 0, y: (TRACK_BOX_HEIGHT - TRACK_HEIGHT) / 2 })
+      // 渐变光轨（到圆钮圆心）
       Row()
-        .width(this.fillWidth())
-        .height(10)
+        .width(this.knobCenterX())
+        .height(TRACK_HEIGHT)
         .borderRadius(Layout.radiusPill)
         .linearGradient({ angle: 90, colors: this.fillColors() })
-        .position({ x: 0, y: (KNOB_SIZE - 10) / 2 })
-      // 圆钮同色光晕（off 无光晕）
-      Circle({ width: KNOB_SIZE + 10, height: KNOB_SIZE + 10 })
+        .position({ x: 0, y: (TRACK_BOX_HEIGHT - TRACK_HEIGHT) / 2 })
+      // 刻度微点
+      this.tickDots()
+      // 外发光（off 无光晕）
+      Circle({ width: KNOB_SIZE + 12, height: KNOB_SIZE + 12 })
         .fill(this.accent())
-        .opacity(this.activeIndex() <= 0 ? 0 : 0.28)
-        .position({ x: this.knobOffset() - 5, y: -5 })
-      // 白边圆钮
+        .opacity(this.activeIndex() <= 0 ? 0 : 0.26)
+        .position({
+          x: this.knobCenterX() - (KNOB_SIZE + 12) / 2,
+          y: (TRACK_BOX_HEIGHT - KNOB_SIZE - 12) / 2
+        })
+      // 22vp 纯白圆钮
       Circle({ width: KNOB_SIZE, height: KNOB_SIZE })
+        .fill(Theme.effortTextBright)
+        .position({ x: this.knobCenterX() - KNOB_SIZE / 2, y: (TRACK_BOX_HEIGHT - KNOB_SIZE) / 2 })
+      // 中心 8vp 档位色圆点
+      Circle({ width: 8, height: 8 })
         .fill(this.accent())
-        .stroke(Theme.bgSurface)
-        .strokeWidth(2)
-        .position({ x: this.knobOffset(), y: 0 })
+        .position({ x: this.knobCenterX() - 4, y: (TRACK_BOX_HEIGHT - 8) / 2 })
     }
     .width('100%')
-    .height(KNOB_SIZE)
+    .height(TRACK_BOX_HEIGHT)
     .onAreaChange((oldValue: Area, newValue: Area) => {
       const widthValue: Length = newValue.width;
       if (typeof widthValue === 'number') {
@@ -407,6 +398,7 @@ export struct ReasoningEffortPanel {
     })
   }
 
+  /** 6 档刻度文字（居中等距，当前档高亮）。 */
   @Builder
   tickRow() {
     Row() {
@@ -414,8 +406,8 @@ export struct ReasoningEffortPanel {
         Text(option.short)
           .fontSize(Layout.fontCaption)
           .fontFamily('monospace')
-          .fontWeight(index === this.activeIndex() ? FontWeight.Medium : FontWeight.Normal)
-          .fontColor(index === this.activeIndex() ? this.accent() : Theme.textTertiary)
+          .fontWeight(index === this.activeIndex() ? FontWeight.Bold : FontWeight.Normal)
+          .fontColor(index === this.activeIndex() ? this.accent() : Theme.effortTextDim)
           .layoutWeight(1)
           .textAlign(TextAlign.Center)
           .onClick(() => {
@@ -429,12 +421,16 @@ export struct ReasoningEffortPanel {
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
-      // 顶部柔和渐变光（48–64vp，随档位增强；off 几乎不可见）
+      // 右上角氛围光（柔和、无硬切色块；off 近不可见）
       Column()
         .width('100%')
-        .height(56)
-        .linearGradient({ angle: 180, colors: this.glowColors() })
-        .opacity(this.glowOpacity())
+        .height(200)
+        .radialGradient({
+          center: this.auraCenter(),
+          radius: '85%',
+          colors: this.auraColors()
+        })
+        .opacity(this.auraAlpha())
         .animation({ duration: 260, curve: Curve.EaseInOut })
 
       Column({ space: Layout.s4 }) {
@@ -448,13 +444,13 @@ export struct ReasoningEffortPanel {
     }
     .width('100%')
     .constraintSize({ maxHeight: '92%' })
-    .backgroundColor(Theme.bgSurface)
-    .borderRadius(Layout.radiusL)
+    .linearGradient({ angle: 180, colors: this.deckColors() })
+    .borderRadius(Layout.radiusXL)
     .border({ width: 1, color: this.edgeColor() })
     .clip(true)
     .animation({ duration: 260, curve: Curve.EaseInOut })
     .onAppear(() => {
-      this.startPulse();
+      this.startBarGlow();
     })
   }
 }
