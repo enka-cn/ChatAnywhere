@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<link rel="stylesheet" href="./katex.min.css">
+<!--
+  说明（资源豁免）：本文件是 Web 模板，无法引用 ArkUI 的 $r 颜色资源，
+  因此日/夜两套文字色以字面值固定，取值与 resources/{base,dark}/element/color.json
+  的 math_inline 保持一致：日间 #0B4A8F、夜间 #8AB4F8。
+-->
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    color: #0B4A8F;
+    font-family: -apple-system, "HarmonyOS Sans", sans-serif;
+  }
+  body.dark {
+    color: #8AB4F8;
+  }
+  #formula {
+    display: inline-block;
+    padding: 2px 0;
+    font-size: 17px;
+    line-height: 1.35;
+  }
+  #fallback {
+    display: none;
+    white-space: pre-wrap;
+    word-break: break-all;
+    color: #DC2626;
+    font-family: monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    padding: 2px 0;
+  }
+  .katex-error {
+    color: #DC2626;
+  }
+</style>
+</head>
+<body>
+<div id="formula"></div>
+<div id="fallback"></div>
+<script src="./katex.min.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var formulaEl = document.getElementById('formula');
+  var fallbackEl = document.getElementById('fallback');
+  var reportedHeight = 0;
+
+  function reportHeight() {
+    var height = document.body.scrollHeight;
+    if (!height || height <= 0) {
+      height = 60;
+    }
+    if (height === reportedHeight) {
+      return;
+    }
+    reportedHeight = height;
+    try {
+      if (window.kaTexBridge && typeof window.kaTexBridge.onRendered === 'function') {
+        window.kaTexBridge.onRendered(height);
+      }
+    } catch (e) {
+      // 桥未注册时忽略，页面本身仍然可读
+    }
+  }
+
+  function scheduleReport() {
+    window.requestAnimationFrame(function () {
+      window.requestAnimationFrame(reportHeight);
+    });
+  }
+
+  function showFallback(tex) {
+    formulaEl.style.display = 'none';
+    fallbackEl.style.display = 'block';
+    fallbackEl.textContent = String(tex == null ? '' : tex);
+    scheduleReport();
+  }
+
+  /**
+   * 渲染公式：
+   * @param {string} tex  公式源码
+   * @param {boolean} dark 是否暗色模式
+   */
+  window.renderFormula = function (tex, dark) {
+    var source = String(tex == null ? '' : tex);
+    document.body.className = dark ? 'dark' : '';
+    formulaEl.style.display = '';
+    fallbackEl.style.display = 'none';
+    formulaEl.innerHTML = '';
+    reportedHeight = 0;
+    if (typeof katex === 'undefined' || katex === null) {
+      showFallback(source);
+      return;
+    }
+    try {
+      katex.render(source, formulaEl, {
+        throwOnError: false,
+        displayMode: true,
+        strict: 'ignore',
+        errorColor: '#DC2626'
+      });
+      if (formulaEl.querySelector('.katex-error')) {
+        showFallback(source);
+      } else {
+        scheduleReport();
+      }
+    } catch (e) {
+      showFallback(source);
+    }
+  };
+
+  window.addEventListener('resize', scheduleReport);
+})();
+</script>
+</body>
+</html>

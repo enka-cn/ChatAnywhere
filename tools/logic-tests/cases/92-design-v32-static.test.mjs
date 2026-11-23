@@ -8,6 +8,7 @@
  * 另含：角色二级列表 + 10 图标 × 8 配色头像、无模型引导、静态度量不变量。
  */
 import { test, assert, summarize } from './_harness.mjs';
+import { verifyCodeMathColors } from './_theme.mjs';
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
@@ -171,11 +172,12 @@ test('角色二级列表与头像：PersonaProfile 含 avatarIcon/avatarTone，P
   console.log('  证据：PersonaProfile avatarIcon/avatarTone + sanitize 兼容；PersonaAvatars 10×8 + iconOf/toneOf；角色二级切换完整');
 });
 
-test('头像配色资源：base/dark 各 54 键且含 8 个 avatar_bg_*、violet/pink 与 6 个 effort_*（日夜两套精确值），深浅色一致', () => {
+test('头像配色资源：base/dark 各 64 键（含 12 code/math）且含 8 个 avatar_bg_*、violet/pink 与 6 个 effort_*（日夜两套精确值），深浅色一致', () => {
   const load = (mode) => JSON.parse(read(path.join(RES, mode, 'element', 'color.json')));
   const bk = load('base').color.map((c) => c.name);
   const dk = load('dark').color.map((c) => c.name);
-  assert.equal(bk.length, 54, `base 颜色键 ${bk.length} ≠ 54（v3.6：48 + 6 effort_*）`);
+  verifyCodeMathColors(assert, load('base'), load('dark'));
+  assert.equal(bk.length, 64, `base 颜色键 ${bk.length} ≠ 64（v3.6：48 + 6 effort_*）`);
   assert.deepEqual([...bk].sort(), [...dk].sort(), '深浅色键集合不一致');
   assert.equal(bk.filter((n) => n.startsWith('avatar_bg_')).length, 8, 'avatar_bg_* 不是 8 个');
   assert.ok(bk.includes('violet') && bk.includes('pink'), '缺少 violet/pink 色键');
@@ -194,7 +196,7 @@ test('头像配色资源：base/dark 各 54 键且含 8 个 avatar_bg_*、violet
     assert.equal(bv[key], baseEffort[key], `base ${key}（日间浅面）`);
     assert.equal(dv[key], darkEffort[key], `dark ${key}（夜间暗舱）`);
   }
-  console.log('  证据：54 键（48 + 6 effort_* 日夜两套精确值）base/dark 一致');
+  console.log('  证据：64 键（48 + 6 effort_* 日夜两套精确值）base/dark 一致');
 });
 
 // ---------------------------------------------------------------------------

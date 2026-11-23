@@ -157,6 +157,7 @@ UI 页面通过 `AppServices.get()` 拿单例，**不要**自己 new 服务、�
 | v3 采样参数互斥 | Anthropic thinking 开启或已设 temperature 时不透传 `top_p`；OpenAI 推理模型发 `reasoning_effort` 时不透传 `top_p` | 严格端点会因同时采样参数 400 |
 | v3.2 模型目录无占位模型 | `ModelCatalog` 只保留 3 条厂商预设（deepseek/anthropic/openai_compat），**不含任何具体模型 id**；模型必须经用户对真实端点「测试连接 / 拉取模型」后写入 RDB `provider_models` 并勾选启用，才会出现在顶栏与角色配置中；新发现模型默认未勾选 | 避免再次出现"假模型能选但不可用"；无模型时 UI 给中文引导 |
 | v3.2 自定义 OpenAI 兼容端点思考能力 | `supportsThinking` 按模型名启发式（gpt-5*/o1/o3/o4*/*reasoner*/*thinking*/deepseek-r* 等才 true），其余不发送 `reasoning_effort` | 非推理模型被塞 reasoning 参数会 400；启发式宁可少发 |
+| v3.7 数学公式渲染 | 独立公式块用本地 rawfile KaTeX Web 渲染（零 CDN）；Web 不可用/解析失败 3s 内降级为可复制源码；行内公式纯 ArkTS 映射不上 WebView；`render.html` 内两套文字色与 `math_inline` 资源一致（HTML 模板属资源豁免） | 无真机无法验证 Web 渲染与高度自适应；主消息列表仍为纯原生 LazyForEach 块级渲染 |
 | v3.3/3.5 线性马达触感 | 统一经 `app/HapticUtil`（`vibrate(ms)`，内部缓存总开关），跨档才触发；无振动硬件/权限被拒/异常时静默；设置「触感震动反馈」关闭后全局静音（`SettingsKeys.HAPTIC_ENABLED`，默认开启） | 不同设备马达能力不同；只作为质感增强，不影响功能 |
 | v3.2 公开仓库签名配置 | `build-profile.json5` 已脱敏（`signingConfigs: []`），本机签名材料备份在 gitignore 的 `build-profile.local.json5`；DevEco 可一键重新自动签名 | 避免把用户绝对路径/加密口令推进公开 Git |
 
@@ -235,6 +236,7 @@ pwsh tools/logic-tests/run.ps1
 | `text_primary/secondary/tertiary` | `#111318` / `#5A6270` / `#8C94A3` | `#F2F4F8` / `#A1A9B8` / `#6D7585` | 文字三档 |
 | `brand` | `#2563EB` | `#4F83FF` | 全站唯一品牌蓝（开关/选中/链接） |
 | `violet` / `pink` | `#7C3AED` / `#EC4899` | `#8B5CF6` / `#F472B6` | 思考强度 High/xHigh 渐变与光晕（v3.3） |
+| `code_*`（12 键） | 见 color.json（GitHub Light 系） | 见 color.json（One Dark 系） | 代码块顶栏/底色/8 类语法高亮 + math_inline（v3.7） |
 | `effort_*`（6 键） | `#11131B/#181C28/#232836/#2A2F3D/#9CA3AF/#FFFFFF` | 同左（思考面板固定深空暗舱） | 思考强度面板暗面/能量柱/轨道/文字（v3.5） |
 | `border` | `#E6E8EE` | `#252934` | 边框/分割 |
 | `warning` / `danger` | `#D97706` / `#DC2626` | `#F59E0B` / `#EF4444` | 记忆提醒 / 停止与错误 |
@@ -275,3 +277,10 @@ pwsh tools/logic-tests/run.ps1
 - **记忆整理透明化**：`RuntimeSnapshot` 暴露 `hasModel / lastCompactionAt / lastCompactionBeforeTokens / lastCompactionAfterTokens / lastCompactionSummary`；设置「记忆与缓存」卡展示当前会话 Token/窗口占比、缓存命中率，并支持「立即整理记忆」与最近整理前后对比 + 摘要展开。
 - **SKILL.md 编解码**：`core_plugin/SkillMarkdown.ets` 的 `SkillMarkdownCodec`（manifest ↔ markdown），创造室/技能页共用。
 
+
+### 10.7 富文本渲染（v3.7）
+
+- **Markdown 排版**：无序列表 5×5 圆点 + `Column.height(Layout.lineChat).justifyContent(FlexAlign.Center)`（与首行中线对齐，多行不漂移）；有序序号 `lineHeight(Layout.lineChat)`；列表项间距 6vp；标题 `margin({ top: 10, bottom: 2 })`；正文/列表/引用/表格 `copyOption(CopyOptions.LocalDevice)`；链接 Span 校验 `http/https` 后系统打开（UIAbilityContext.openLink，失败回退 startAbility viewData）。
+- **代码高亮**：`components/CodeHighlighter.ets`（纯 ArkTS，零 import，8 类 token / 7 语言族，token 拼接必须等于原文）+ `components/CodeBlockView.ets`（36vp 语言栏、复制 1.5s 反馈、横向 Scroll 保行宽、等宽 13.5fp/21、圆角 14、1vp border）；颜色全部 `Theme.code*`（base GitHub Light / dark One Dark）。
+- **LaTeX 公式**：`MarkdownParser.ets` 解析 `$$…$$` / `\[…\]`（块）与 `$…$` / `\(…\)`（行内），复杂行内（`\frac|\sum|\int|\sqrt|\begin{`）独占成行时提升为 math 块，`\begin{align}`/`align*` → `aligned`；代码围栏与表格内不解析。独立公式由 `MathBlock.ets` 用本地 `rawfile/katex/`（katex.min.js/css + 20 个 woff2，合计约 548KB）Web 渲染：`javaScriptProxy('kaTexBridge').onRendered(height)` 动态高度、`throwOnError:false`、失败降级源码；行内公式由 `InlineMath.latexToText()` 纯 ArkTS 映射（希腊/运算符/上下标），零 WebView。
+- **提示词**：`PromptPresets.BASE_PROMPT`（base 层）约定模型统一输出标准 LaTeX（行内 `$...$`、独立 `$$...$$`），不要用代码块拼写公式；该约定为一次性 base 前缀变更。

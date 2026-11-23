@@ -215,6 +215,46 @@
     {
       "name": "effort_text_bright",
       "value": "#111827"
+    },
+    {
+      "name": "code_type",
+      "value": "#8250DF"
+    },
+    {
+      "name": "code_function",
+      "value": "#6639BA"
+    },
+    {
+      "name": "code_macro",
+      "value": "#953800"
+    },
+    {
+      "name": "code_comment",
+      "value": "#6E7781"
+    },
+    {
+      "name": "code_header_bg",
+      "value": "#F6F8FA"
+    },
+    {
+      "name": "code_number",
+      "value": "#0550AE"
+    },
+    {
+      "name": "code_plain",
+      "value": "#1F2328"
+    },
+    {
+      "name": "code_string",
+      "value": "#0A3069"
+    },
+    {
+      "name": "code_keyword",
+      "value": "#CF222E"
+    },
+    {
+      "name": "math_inline",
+      "value": "#0B4A8F"
     }
   ]
 }

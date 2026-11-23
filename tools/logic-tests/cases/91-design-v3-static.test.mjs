@@ -8,6 +8,7 @@
  * 判定口径：「行数」= 非空行（与 Lead 基线一致）。
  */
 import { test, assert, skip, summarize } from './_harness.mjs';
+import { verifyCodeMathColors } from './_theme.mjs';
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -39,9 +40,9 @@ const count = (text, re) => (text.match(re) || []).length;
 const chatFiles = walk(CHAT_ETS, /\.(ets|ts)$/);
 
 // ---------------------------------------------------------------------------
-// 1) v3/v3.5 色板：54 键 + 设计稿精确色值
+// 1) v3/v3.5 色板：64 键 + 设计稿精确色值
 // ---------------------------------------------------------------------------
-test('v3.5 色板：base/dark 各 54 键且键集合一致，品牌/气泡/页面底色精确匹配设计稿', () => {
+test('v3.7 色板：base/dark 各 64 键（含 12 code/math）且键集合一致，品牌/气泡/页面底色精确匹配设计稿', () => {
   const base = JSON.parse(read(path.join(RES, 'base', 'element', 'color.json')));
   const dark = JSON.parse(read(path.join(RES, 'dark', 'element', 'color.json')));
   const map = (json) => {
@@ -51,7 +52,8 @@ test('v3.5 色板：base/dark 各 54 键且键集合一致，品牌/气泡/页�
   };
   const b = map(base);
   const d = map(dark);
-  assert.equal(Object.keys(b).length, 54, `base 颜色键 ${Object.keys(b).length} ≠ 54（v3.5：48 + 6 暗舱 effort_*）`);
+  verifyCodeMathColors(assert, base, dark);
+  assert.equal(Object.keys(b).length, 64, `base 颜色键 ${Object.keys(b).length} ≠ 64（v3.5：48 + 6 暗舱 effort_*）`);
   assert.deepEqual(Object.keys(b).sort(), Object.keys(d).sort(), '深浅色键集合不一致');
   assert.equal(Object.keys(b).filter((n) => n.startsWith('avatar_bg_')).length, 8, 'avatar_bg_* 不是 8 个');
   for (const key of ['effort_deck_top', 'effort_deck_bottom', 'effort_track', 'effort_bar_off',
@@ -79,7 +81,7 @@ test('v3.5 色板：base/dark 各 54 键且键集合一致，品牌/气泡/页�
   for (const key of Object.keys(baseEffort)) {
     expect(key, baseEffort[key], darkEffort[key]);
   }
-  console.log('  证据：54 键一致（violet/pink + 8 avatar_bg_* + 6 effort_* 日夜两套精确值）；brand #2563EB/#4F83FF，bubble_user #111827/#2563EB，bg_page #FFFFFF/#0E1014');
+  console.log('  证据：64 键一致（violet/pink + 8 avatar_bg_* + 6 effort_* 日夜两套精确值）；brand #2563EB/#4F83FF，bubble_user #111827/#2563EB，bg_page #FFFFFF/#0E1014');
 });
 
 // ---------------------------------------------------------------------------

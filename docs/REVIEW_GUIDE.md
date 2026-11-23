@@ -69,10 +69,10 @@
 
 **已验证（可复现）**
 - 完整构建：4 个 HAR + entry HAP 编译通过（`tools/build.ps1`；本机签名材料在 CLI 下不可用时脚本自动 unsigned 校验并恢复配置）。
-- 纯逻辑：`pwsh tools/logic-tests/run.ps1` → **34 个用例文件 / 499 条断言全绿**（离线、零三方依赖）。
+- 纯逻辑：`pwsh tools/logic-tests/run.ps1` → **37 个用例文件 / 527 条断言全绿**（离线、零三方依赖）。
 - v3.1 视觉打磨：原生字号阶梯、顶栏/栏宽/信源尺寸、`IconBtn` 居中图标按钮（按压微缩）（见 `docs/TEST_REPORT.md` §14）。
 - v3.2 真机反馈修复：真实模型目录（去占位 + `/models` 探测 + RDB `provider_models` + 勾选启用）、角色二级视图与 10×8 头像、`VendorCard` 修复 @Builder 按值传参不刷新、记忆整理前后 Token/摘要透明化、颜色资源 46 键（见 §15）。
-- 静态门禁：**61 项**（90 11 + 91 15 + 92 11 + 93 6 + 94 6 + 95 6 + 96 6）——无硬编码色（`bridge/LanEditorServer.ets` 内嵌 HTML CSS 豁免）、无教学文案、虚拟列表/门面拆分/入口切换/设计令牌/资源键一致性。
+- 静态门禁：**70 项**（90 11 + 91 15 + 92 11 + 93 6 + 94 6 + 95 6 + 96 6 + 97 9）——无硬编码色（`bridge/LanEditorServer.ets` 内嵌 HTML CSS 豁免）、无教学文案、虚拟列表/门面拆分/入口切换/设计令牌/资源键一致性。
 - v3 设计验收：色板 38 键与精确色值、Breakpoint 600vp（4 页/5 处）、侧栏 224/232/216 + 画布 660 + 信源 280、6 档思考、SKILL.md 编辑器接线、附件契约、角色与技能三级继承、5 个 v2 组件已清理（见 `docs/TEST_REPORT.md` §13）。
 - 详见 `docs/TEST_REPORT.md`（构建矩阵、逐文件覆盖、五 Milestone DoD、重构 §12、v3 §13）。
 
@@ -108,6 +108,7 @@
 - [ ] 无模型（`hasModel=false`）时 UI 给中文引导且不崩溃；角色 `modelId` 为空表示「跟随当前模型」
 - [ ] 角色头像 `avatarIcon/avatarTone` 有默认兼容；记忆卡展示真实 `lastCompaction*` 数据（不得伪造）
 - [ ] 折叠抽屉单一 `drawerTranslateX` + `scrimOpacity`（无 drawerDragX 双偏移；拖动抬手不回跳）；模型添加胶囊四态且防连点；6 档面板日夜令牌自动切换（无浮点刻度），振动必须经 HapticUtil 且可被总开关静音；bindSheet 自定义关闭按钮统一 IconBtn
+- [ ] Markdown 列表圆点与首行中线对齐（5×5 + height(lineChat) center）、链接 http/https 白名单、正文划选；代码块必须走 `CodeHighlighter`+`CodeBlockView`（横向滚动/复制反馈/8 类 Theme 色）；公式块只用本地 KaTeX rawfile Web（零 CDN）且 3s 降级源码，行内公式不得上 WebView；BASE_PROMPT 保留 LaTeX 约定
 
 ## 7. 复现命令（可选）
 

@@ -1,19 +1,22 @@
 /**
  * 块级增量 Markdown 解析（纯逻辑，零平台依赖，零 import）。
  *
- * 为什么要单独一个文件：`tools/logic-tests/prepare.ps1` 会把名字含 Markdown 的纯逻辑 `.ets`
- * 复制成 `.ts` 用 Node 直接跑；带 ArkUI 装饰器的文件会被跳过。所以解析函数放这里，
- * `MarkdownBlock.ets` 只负责把解析结果渲染成 ArkUI 组件，并原样再导出这两个函数。
+ * `tools/logic-tests/prepare.ps1` 会把名字含 Markdown 的纯逻辑 `.ets` 复制成 `.ts`
+ * 用 Node 直接跑；带 ArkUI 装饰器的文件会被跳过。所以解析函数放这里，
+ * `MarkdownBlock.ets` 只负责渲染，并原样再导出这两个函数。
  *
  * 设计取舍（对齐 Blueprint §1「块级增量 Markdown」）：
  * - 分块结果带稳定 `id` 与内容 `signature`，UI 用 `id + signature` 做 ForEach key，
  *   历史已闭合块 key 不变 → 不重建；只有末尾正在增长的块会刷新。
- * - 只处理对话里真实会出现的语法：标题、段落、有序/无序列表、引用、代码围栏、表格、分割线，
- *   行内支持 粗体 / 斜体 / 行内代码 / 链接。未闭合的代码围栏按「还在流式输出」处理。
+ * - 支持：标题、段落、有序/无序列表、引用、代码围栏、表格、分割线、块级公式，
+ *   行内支持 粗体 / 斜体 / 行内代码 / 链接 / 行内公式（$...$、\(...\)）。
+ * - 未闭合的代码围栏 / 公式按「还在流式输出」处理（用当前已知内容成块）。
+ * - 代码围栏内不解析公式；表格单元格公式保持文本；math 块参与 signature。
  */
 
 /** 块类型。 */
-export type MdBlockKind = 'heading' | 'paragraph' | 'ulist' | 'olist' | 'quote' | 'code' | 'table' | 'divider';
+export type MdBlockKind = 'heading' | 'paragraph' | 'ulist' | 'olist' | 'quote' | 'code' | 'table' | 'divider'
+  | 'math';
 
 /** 一个块级元素（所有字段都有默认值，避免调用方判空）。 */
 export interface MdBlock {
@@ -28,7 +31,7 @@ export interface MdBlock {
   lines: string[];
   /** 代码围栏语言标签（可能为空串）。 */
   language: string;
-  /** 代码正文。 */
+  /** 代码正文 / 公式源码。 */
   code: string;
   /** 表格行（每行是单元格原始文本数组）。 */
   rows: string[][];
@@ -37,7 +40,7 @@ export interface MdBlock {
 }
 
 /** 行内片段类型。 */
-export type InlineKind = 'text' | 'bold' | 'italic' | 'code' | 'link';
+export type InlineKind = 'text' | 'bold' | 'italic' | 'code' | 'link' | 'math';
 
 /** 行内片段。 */
 export interface InlineSpan {
@@ -45,6 +48,20 @@ export interface InlineSpan {
   text: string;
   /** kind === 'link' 时的地址。 */
   url?: string;
+}
+
+// ---------------------------------------------------------------------------
+// 公式预处理
+// ---------------------------------------------------------------------------
+
+/** 把 align / align* 规范为 aligned（其余公式源码原样保留，含 \\ 与 &）。 */
+export function normalizeMathBody(raw: string): string {
+  let body: string = raw;
+  body = body.split('\\begin{align*}').join('\\begin{aligned}');
+  body = body.split('\\end{align*}').join('\\end{aligned}');
+  body = body.split('\\begin{align}').join('\\begin{aligned}');
+  body = body.split('\\end{align}').join('\\end{aligned}');
+  return body.trim();
 }
 
 // ---------------------------------------------------------------------------
@@ -65,7 +82,42 @@ function pushPlain(spans: InlineSpan[], text: string): void {
   spans.push(span);
 }
 
-/** 把一行里的 **粗体** / *斜体* / `行内代码` / [链接](url) 切成片段。 */
+/** 行内公式内容是否合法（非空、首尾无空白、单行）。 */
+function isValidInlineMath(body: string): boolean {
+  if (body.length === 0) {
+    return false;
+  }
+  if (body.indexOf('\n') >= 0) {
+    return false;
+  }
+  if (body !== body.trim()) {
+    return false;
+  }
+  return true;
+}
+
+/** 从 start（`$` 后的字符）找未转义的收尾 `$`，找不到返回 -1。 */
+function findClosingDollar(text: string, start: number): number {
+  let i: number = start;
+  while (i < text.length) {
+    const ch: string = text.charAt(i);
+    if (ch === '\\' && text.charAt(i + 1) === '$') {
+      i += 2;
+      continue;
+    }
+    if (ch === '$') {
+      return i;
+    }
+    i += 1;
+  }
+  return -1;
+}
+
+/**
+ * 把一行里的 **粗体** / *斜体* / `行内代码` / [链接](url) / 行内公式 切成片段。
+ *
+ * 行内公式：`$...$` 与 `\(...\)`；`\$` 视为转义美元、金额 `$5`（找不到收尾）不误伤。
+ */
 export function parseInline(text: string): InlineSpan[] {
   const spans: InlineSpan[] = [];
   if (text === undefined || text === null || text.length === 0) {
@@ -75,6 +127,45 @@ export function parseInline(text: string): InlineSpan[] {
   let i: number = 0;
   while (i < text.length) {
     const ch: string = text.charAt(i);
+
+    // 转义美元：\$ 原样输出 $
+    if (ch === '\\' && text.charAt(i + 1) === '$') {
+      plain += '$';
+      i += 2;
+      continue;
+    }
+
+    // 行内公式：\(...\)
+    if (ch === '\\' && text.charAt(i + 1) === '(') {
+      const end: number = text.indexOf('\\)', i + 2);
+      if (end > i + 2) {
+        const body: string = text.substring(i + 2, end);
+        if (isValidInlineMath(body)) {
+          pushPlain(spans, plain);
+          plain = '';
+          const mathSpan: InlineSpan = { kind: 'math', text: normalizeMathBody(body) };
+          spans.push(mathSpan);
+          i = end + 2;
+          continue;
+        }
+      }
+    }
+
+    // 行内公式：$...$
+    if (ch === '$' && text.charAt(i + 1) !== '$') {
+      const end: number = findClosingDollar(text, i + 1);
+      if (end > i + 1) {
+        const body: string = text.substring(i + 1, end);
+        if (isValidInlineMath(body)) {
+          pushPlain(spans, plain);
+          plain = '';
+          const mathSpan: InlineSpan = { kind: 'math', text: normalizeMathBody(body) };
+          spans.push(mathSpan);
+          i = end + 1;
+          continue;
+        }
+      }
+    }
 
     // 行内代码：`xxx`
     if (ch === '`') {
@@ -265,6 +356,46 @@ function splitCells(line: string): string[] {
   return out;
 }
 
+/** 块级公式起始标记：`$$` 或 `\[`；不是返回 ''。 */
+function mathMarker(line: string): string {
+  const trimmed: string = line.trim();
+  if (trimmed.startsWith('$$')) {
+    return '$$';
+  }
+  if (trimmed.startsWith('\\[')) {
+    return '\\]';
+  }
+  return '';
+}
+
+/** 该行是否「整行只有一个行内公式」。 */
+function wholeLineMath(line: string): string {
+  const trimmed: string = line.trim();
+  if (trimmed.length < 4) {
+    return '';
+  }
+  if (trimmed.startsWith('$$') && trimmed.endsWith('$$')) {
+    return trimmed.substring(2, trimmed.length - 2).trim();
+  }
+  if (trimmed.startsWith('\\[') && trimmed.endsWith('\\]')) {
+    return trimmed.substring(2, trimmed.length - 2).trim();
+  }
+  if (trimmed.charAt(0) === '$' && trimmed.charAt(trimmed.length - 1) === '$') {
+    const body: string = trimmed.substring(1, trimmed.length - 1);
+    if (body.indexOf('$') >= 0) {
+      return '';
+    }
+    return body.trim();
+  }
+  return '';
+}
+
+/** 复杂公式（独占成块的候选）：含分数/求和/积分/根号/多行环境。 */
+function isComplexMath(body: string): boolean {
+  return body.indexOf('\\frac') >= 0 || body.indexOf('\\sum') >= 0 || body.indexOf('\\int') >= 0
+    || body.indexOf('\\sqrt') >= 0 || body.indexOf('\\begin{') >= 0;
+}
+
 /** 轻量字符串哈希（只用于内容签名，不做安全用途）。 */
 function hashText(input: string): number {
   let hash: number = 5381;
@@ -307,11 +438,20 @@ function makeBlock(kind: MdBlockKind, index: number): MdBlock {
   return block;
 }
 
+/** 追加一个 math 块。 */
+function pushMathBlock(blocks: MdBlock[], body: string): void {
+  const block: MdBlock = makeBlock('math', blocks.length);
+  block.code = normalizeMathBody(body);
+  block.signature = signBlock(block);
+  blocks.push(block);
+}
+
 /**
  * 把 Markdown 文本切成块。
  *
- * 流式场景的重要行为：未闭合的代码围栏 / 未结束的表格会按「当前已知内容」成块，
- * 因此每次追加文本都会重新解析，但历史块的 `id + signature` 不变。
+ * 流式场景的重要行为：未闭合的代码围栏 / 未结束的表格 / 未闭合公式
+ * 会按「当前已知内容」成块，因此每次追加文本都会重新解析，
+ * 但历史块的 `id + signature` 不变。
  */
 export function splitBlocks(markdown: string): MdBlock[] {
   const blocks: MdBlock[] = [];
@@ -330,7 +470,7 @@ export function splitBlocks(markdown: string): MdBlock[] {
       continue;
     }
 
-    // 代码围栏
+    // 代码围栏（围栏内不解析公式）
     const fenceMatch: RegExpMatchArray | null = line.trim().match(/^```(.*)$/);
     if (fenceMatch !== null) {
       const language: string = fenceMatch[1].trim();
@@ -348,6 +488,41 @@ export function splitBlocks(markdown: string): MdBlock[] {
       block.code = codeLines.join('\n');
       block.signature = signBlock(block);
       blocks.push(block);
+      continue;
+    }
+
+    // 块级公式：$$...$$ / \[...\]（可跨行；未闭合按当前内容成块）
+    const marker: string = mathMarker(line);
+    if (marker.length > 0) {
+      const trimmed: string = line.trim();
+      const openerLength: number = 2;
+      const rest: string = trimmed.substring(openerLength);
+      const bodyLines: string[] = [];
+      let closed: boolean = false;
+      const closeInRest: number = rest.indexOf(marker);
+      if (closeInRest >= 0) {
+        bodyLines.push(rest.substring(0, closeInRest));
+        closed = true;
+        i += 1;
+      } else {
+        if (rest.length > 0) {
+          bodyLines.push(rest);
+        }
+        i += 1;
+        while (i < lines.length) {
+          const one: string = lines[i];
+          const closeAt: number = one.indexOf(marker);
+          if (closeAt >= 0) {
+            bodyLines.push(one.substring(0, closeAt));
+            closed = true;
+            i += 1;
+            break;
+          }
+          bodyLines.push(one);
+          i += 1;
+        }
+      }
+      pushMathBlock(blocks, bodyLines.join('\n'));
       continue;
     }
 
@@ -372,7 +547,7 @@ export function splitBlocks(markdown: string): MdBlock[] {
       continue;
     }
 
-    // 表格（首行以 | 开头，且下一行是分隔行或下一行也是表格行）
+    // 表格（首行以 | 开头；单元格内公式保持文本）
     if (isTableRow(line)) {
       const tableLines: string[] = [];
       while (i < lines.length && isTableRow(lines[i])) {
@@ -468,17 +643,35 @@ export function splitBlocks(markdown: string): MdBlock[] {
       if (cursor > i) {
         if (readHeading(one) !== null || readQuote(one) !== null || readUnordered(one) !== null
           || readOrdered(one) !== null || isDivider(one) || isTableRow(one)
-          || one.trim().startsWith('```')) {
+          || one.trim().startsWith('```') || mathMarker(one).length > 0) {
           break;
         }
       }
       paragraphLines.push(one);
       cursor += 1;
     }
-    const block: MdBlock = makeBlock('paragraph', blocks.length);
-    block.text = paragraphLines.join('\n');
-    block.signature = signBlock(block);
-    blocks.push(block);
+    // 段落内的「独占成行 + 复杂」行内公式提升为独立 math 块，两侧文字仍是段落。
+    const buffer: string[] = [];
+    const flushParagraph = (): void => {
+      if (buffer.length === 0) {
+        return;
+      }
+      const block: MdBlock = makeBlock('paragraph', blocks.length);
+      block.text = buffer.join('\n');
+      block.signature = signBlock(block);
+      blocks.push(block);
+      buffer.length = 0;
+    };
+    for (const one of paragraphLines) {
+      const body: string = wholeLineMath(one);
+      if (body.length > 0 && isComplexMath(body)) {
+        flushParagraph();
+        pushMathBlock(blocks, body);
+      } else {
+        buffer.push(one);
+      }
+    }
+    flushParagraph();
     i = cursor > i ? cursor : i + 1;
   }
   return blocks;
@@ -492,7 +685,7 @@ export function blockSpacing(kind: MdBlockKind): number {
   if (kind === 'ulist' || kind === 'olist') {
     return 6;
   }
-  if (kind === 'code' || kind === 'table') {
+  if (kind === 'code' || kind === 'table' || kind === 'math') {
     return 10;
   }
   return 6;

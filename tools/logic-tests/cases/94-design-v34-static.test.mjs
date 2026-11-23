@@ -10,6 +10,7 @@
  * 另含 Lead 契约：`ModelCatalogApi.unregister`、`AppServices.clearActiveProfile`、颜色仍 48 键。
  */
 import { test, assert, summarize } from './_harness.mjs';
+import { verifyCodeMathColors } from './_theme.mjs';
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -145,7 +146,7 @@ test('取消链路：SettingsModelsView 含 toggleModel + unregister + clearActi
 // ---------------------------------------------------------------------------
 // 4) 契约：unregister / clearActiveProfile / 颜色不变
 // ---------------------------------------------------------------------------
-test('契约：ModelCatalogApi/ModelCatalog 有 unregister，AppServices 有 clearActiveProfile，颜色仍 54 键（v3.6 日夜两套精确值）', () => {
+test('契约：ModelCatalogApi/ModelCatalog 有 unregister，AppServices 有 clearActiveProfile，颜色仍 64 键（v3.6 日夜两套精确值）', () => {
   const proto = read(path.join(PKG, 'core_protocol', 'src', 'main', 'ets', 'interfaces', 'ProtocolLayer.ets'));
   assert.ok(/unregister\(\s*providerId:\s*string,\s*modelId:\s*string\s*\)/.test(proto),
     'ModelCatalogApi 缺少 unregister(providerId, modelId)');
@@ -157,7 +158,8 @@ test('契约：ModelCatalogApi/ModelCatalog 有 unregister，AppServices 有 cle
   const load = (mode) => JSON.parse(read(path.join(RES, mode, 'element', 'color.json')));
   const bk = load('base').color.map((c) => c.name);
   const dk = load('dark').color.map((c) => c.name);
-  assert.equal(bk.length, 54, `颜色键 ${bk.length} ≠ 54（v3.6：48 + 6 effort_*）`);
+  verifyCodeMathColors(assert, load('base'), load('dark'));
+  assert.equal(bk.length, 64, `颜色键 ${bk.length} ≠ 64（v3.6：48 + 6 effort_*）`);
   assert.deepEqual([...bk].sort(), [...dk].sort(), '深浅色键集合不一致');
   const bv = Object.fromEntries(load('base').color.map((c) => [c.name, String(c.value).toUpperCase()]));
   const dv = Object.fromEntries(load('dark').color.map((c) => [c.name, String(c.value).toUpperCase()]));
@@ -174,7 +176,7 @@ test('契约：ModelCatalogApi/ModelCatalog 有 unregister，AppServices 有 cle
     assert.equal(bv[key], baseEffort[key], `base ${key}（日间浅面）`);
     assert.equal(dv[key], darkEffort[key], `dark ${key}（夜间暗舱）`);
   }
-  console.log('  证据：unregister 契约+实现、clearActiveProfile 存在；颜色 54 键（6 effort_* 日夜两套精确值）一致');
+  console.log('  证据：unregister 契约+实现、clearActiveProfile 存在；颜色 64 键（6 effort_* 日夜两套精确值）一致');
 });
 
 test('纪律：v3.4 面板与胶囊无新增硬编码色值/教学文案（含全仓扫描）', () => {

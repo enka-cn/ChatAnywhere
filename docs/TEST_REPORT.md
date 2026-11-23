@@ -1227,3 +1227,125 @@ warnings 仍为 `ArkTS:WARN Function may throw exceptions.`（平台 API 建议�
 - **契约**：packages 未变；`ChatRuntimeApi`/`ChatRuntime` 未动；main_pages 4 页；颜色 54 键（effort 日夜两套）。
 - **缺陷**：本轮**未发现需要修复的缺陷**。
 - **残余**：真机拖动回弹/日夜观感/浅底白钮对比度/自定义关闭按钮仍需按 §19.7 冒烟；无真机前不得宣布 v3.6 交互修复闭环达成。
+
+---
+
+## 20. v3.7 富文本渲染升级验收（Markdown 排版 / 原生代码高亮 / 离线 LaTeX 公式）
+
+> 验收人：`qa-verify`；数据快照：构建 2026-11-23 18:59:22–19:00:12；用例 2026-11-23 18:59:12（Asia/Shanghai）。
+> 范围（task-40/41/42/43）：① Markdown 列表/链接/长按划选排版修复；② 原生代码高亮（8 类 token + 7 语言族 + 复制 + 横向滚动）；③ 离线 KaTeX 块级/行内公式 + 提示词 LaTeX 约定。
+> **验证前提不变**：无真机联调（无设备 / 无 API Key）；验证 = ArkTS 编译期类型检查 + 纯逻辑单测 + v3.7 静态断言 + 代码审查。
+> 构建配置两态：工作区本机签名（`skip-worktree` 隐藏）/ 仓库 HEAD 脱敏（`signingConfigs: []`）。
+
+### 20.1 改动面（git 工作区）
+
+v3.7 应用范围 = 新增 6 个渲染组件/资源 + 修改 5 个既有文件（`Theme`/`MarkdownBlock`/`MarkdownParser`/`color.json` base+dark/`PromptPresets`）+ `rawfile/katex/`：
+
+| 文件 | 变化 |
+| --- | --- |
+| `components/CodeHighlighter.ets`（新增，362 行/333 非空） | 零依赖纯 ArkTS 词法高亮：8 类 token、7 语言族（cpp/ts/python/json/bash/sql/yaml）、拼接保真、未知语言整段 plain |
+| `components/MarkdownParser.ets`（修改，692 行/645 非空） | math 块/行内类型、`$$…$$`/`\[…\]`/`\(…\)`、跨行/未闭合容错、复杂行内公式独占成块提升、align→aligned 归一化、围栏/表格不解析、块 id+signature 稳定 |
+| `components/MarkdownBlock.ets`（修改，316 行/291 非空） | 列表 5×5 圆点 + `height(lineChat)+justifyContent(Center)`、有序行高、间距 6、链接 http 校验 + openLink/startAbility 回退、`copyOption(LocalDevice)`、heading margin 10/2、接入 `CodeBlockView`/`MathBlock`，删除旧 Text+BREAK_ALL |
+| `components/InlineMath.ets`（新增，406 行/393 非空） | `latexToText` LaTeX→文本映射（希腊字母/常见符号），纯逻辑 |
+| `components/CodeBlockView.ets`（新增，157 行/145 非空） | 36vp 语言栏 + 复制反馈 1.5s + 横向 Scroll + 8 类 Theme 高亮 + 圆角 14 |
+| `components/MathBlock.ets`（新增，183 行/165 非空） | 本地 `$rawfile('katex/render.html')` Web + `javaScriptProxy` + `runJavaScript` + 高度自适应（40–4000vp）+ 3s 降级源码 |
+| `resources/rawfile/katex/`（新增） | katex.min.js 269KB + katex.min.css 22.8KB + 20 个 woff2 字体（合计 **548.5KB**）；render.html 3.2KB |
+| `packages/core_context/PromptPresets.ets`（修改） | BASE_PROMPT 末尾新增「统一 LaTeX 输出约定」（行内 `$...$`、独立 `$$...$$`，禁止代码块拼公式） |
+| `app/Theme.ets`（修改） | 新增 12 个 code/math 主题访问器（`codeHeaderBg/codeBg/codeText/codeType/codeFunction/codeMacro/codeComment/codeNumber/codePlain/codeString/mathInline`） |
+| `resources/{base,dark}/color.json`（修改） | 新增 12 个 code/math 键；**base/dark 各 64 个唯一键**（集合一致） |
+
+### 20.2 构建矩阵（工作区本机签名态触发 unsigned 回退；仓库态脱敏）
+
+| 目标 | 结果 | 开始时间 | 日志 | 备注 |
+| --- | --- | --- | --- | --- |
+| `core_model` | **BUILD-OK** | 18:59:22 | `build-logs/core_model-20261123-185923.log` | 0 error / 30 warning |
+| `core_protocol` | **BUILD-OK** | 18:59:34 | `build-logs/core_protocol-20261123-185935.log` | 0 error / 32 warning |
+| `core_context` | **BUILD-OK** | 18:59:47 | `build-logs/core_context-20261123-185947.log` | 0 error / 30 warning |
+| `core_plugin` | **BUILD-OK** | 18:59:58 | `build-logs/core_plugin-20261123-185958.log` | 0 error / 33 warning |
+| `chat`（entry HAP，含全部 HAR） | **BUILD-OK [unsigned verification]** | 19:00:12 | `build-logs/all-20261123-190012-unsigned.log` | 0 error / 30 warning；工作区本机签名报 `11014003` → 临时跳过签名重试并恢复 |
+
+| 构建配置两态 | 证据 |
+| --- | --- |
+| 工作区（本机签名） | `build-profile.json5` SHA256 构建前 = 后 = `0259B43A…35C665`（2448B）；`skip-worktree` 隐藏，不提交 |
+| 仓库 HEAD（公开脱敏） | `git show HEAD:build-profile.json5`：`signingConfigs: []`、无 certpath/keyPassword/storePassword/用户路径、product 保留 `"signingConfig": "default"` |
+| 本机材料备份 | `build-profile.local.json5` 存在且被 `.gitignore` 忽略 |
+
+warnings 仍为 `ArkTS:WARN Function may throw exceptions.`（平台 API 建议提示），0 error。
+
+### 20.3 用例统计（最终）
+
+| 指标 | 值 |
+| --- | --- |
+| 运行时间 | **2026-11-23 18:59:12** |
+| 用例文件 | **37 个** |
+| 断言级用例 | **527 条** |
+| 通过 / 失败 / 跳过 | **527 / 0 / 0** |
+| 结果 | `RESULT: PASS`（`run.ps1` 退出码 0） |
+| prepare 产物 | 拷贝 53 个纯逻辑文件（新增 `CodeHighlighter.ets`/`InlineMath.ets`）；跳过 5；未命中 1；0 告警 |
+
+新增/更新用例（均为测试侧）：
+- **新增 `46-code-highlighter`**（5 用例）：7 语言族拼接保真 + 别名、8 类 token 命中、未知语言整段 plain、未闭合字符串/注释容错、kind 合法/同类合并；
+- **新增 `47-markdown-math`**（13 用例）：`$$`/`\[` 块、跨行/未闭合容错、align→aligned、围栏内不解析、表格保持文本、复杂行内提升成块、`$x$` 行内 span、金额 `$5` 不误伤、`\(...\)`、id/signature 稳定、块间距规则、空输入；
+- **新增 `97-design-v37-static`**（9 用例）：排版/解析/高亮/代码块/公式/资源/行内映射/提示词/64 键/纪律；
+- **更新 `90–96`**：色键基线 54→**64**（新增 12 code/math 两套精确值，共享 `_theme.mjs` 断言）。
+
+### 20.4 三项能力证据（`97` 9/9 + 新逻辑用例通过）
+
+| 项 | 证据（文件:行/数量） |
+| --- | --- |
+| ① Markdown 排版修复 | `MarkdownBlock.ets`：列表 `Circle({ width: 5, height: 5 })`(:215) + `.height(Layout.lineChat)`(:218) + `.justifyContent(FlexAlign.Center)`(:220)；正文/列表 `lineHeight(Layout.lineChat)`(:164)；`LIST_GAP = 6`(:21)；链接 `http://`/`https://` 校验(:86–87) + `openLink(`(:81) + `startAbility` 回退(:115)；`copyOption(CopyOptions.LocalDevice)` ≥2 处(:166/:258)；`headingBlock` `.margin({ top: 10, bottom: 2 })`(:183)；接入 `CodeBlockView(`(:237) / `MathBlock(`(:242)；**无 `WordBreak.BREAK_ALL`、无 `Text(block.code)`** |
+| ② 原生代码高亮 | `CodeHighlighter.ets` 362 行：`CodeTokenKind` 8 类(:11)、7 语言族 + 别名（`normalizeLanguage` :54–71）、`highlightCode(`(:352) 保留 `join === code` 不变量；`CodeBlockView.ets` 157 行：`ScrollDirection.Horizontal`(:136)、`highlightCode(`(:36)、`Icons.copy`/`Icons.check`(:103)、`COPIED_HOLD_MS = 1500`(:12) + setTimeout(:85)、`pasteboard` 写入、`Theme.codeHeaderBg`(:119)/`Theme.codeBg`(:140)、圆角 14(:152)；`46` 5/5、拼接保真覆盖 7 族 + 12 别名、8 类 token 全部命中 |
+| ③ 离线 LaTeX 公式 | `MathBlock.ets` 183 行：`$rawfile('katex/render.html')`(:141)、`javaScriptProxy`(:143)、`runJavaScript`(:131)、`webHeight`/`.height(`(:153)、`MIN_WEB_HEIGHT/MIN 40–MAX 4000`(:12–13)、3s 降级源码(:89–90)；rawfile/katex：23 文件、**20 woff2**、合计 **548.5KB**（katex.min.js 269KB、css 22.8KB），render.html 3169B 含本地 `katex.min.js/css` + `throwOnError:false` + `kaTexBridge.onRendered`；`InlineMath.ets` `latexToText`(:267) + 8 组希腊映射；`PromptPresets.BASE_PROMPT` 末尾 LaTeX 约定（`$...$` / `$$...$$`）；`47` 13/13 覆盖块/行内/容错/提升/金额误伤/签名稳定 |
+| 颜色 | base/dark 各 **64 键**（v3.7 指纹：base `AE4D60A8BE1785EC`、dark `BC0DE5AECC39373E`）；12 个 code/math 键两套精确值（见 §20.1 交付面 + `_theme.mjs`），violet/pink 与 6 个 effort_* 保留 |
+
+### 20.5 静态断言总览
+
+| 文件 | 结果 | 覆盖 |
+| --- | --- | --- |
+| `97-design-v37-static` | **9/9 PASS** | 排版/解析/高亮/代码块/公式/资源/行内映射/提示词/64 键/纪律 |
+| `96-design-v36-static` | **6/6 PASS** | v3.6 基线上移 64 键 |
+| `95-design-v35-static` | **6/6 PASS** | v3.5 基线上移 64 键 |
+| `94-design-v34-static` | **6/6 PASS** | v3.4 基线上移 64 键 |
+| `93-design-v33-static` | **6/6 PASS** | v3.3 基线上移 64 键 |
+| `92-design-v32-static` | **11/11 PASS** | v3.2 根因 + 头像 + 64 键 + git HEAD 脱敏 |
+| `91-design-v3-static` | **15/15 PASS** | v3/v3.1 设计基线 + 64 键 |
+| `90-refactor-static` | **11/11 PASS** | 64 键/20 interfaces/git HEAD 脱敏/入口/L3/虚列表/行数 |
+| 合计 | **70/70 PASS** | — |
+
+### 20.6 契约 / 回归
+
+| 项 | 证据 |
+| --- | --- |
+| 新增/改动文件（已登记） | `CodeHighlighter.ets` `2CC06308CA79CB75`（18:49:28）、`MarkdownParser.ets` `F5A7D83A37B75F17`（18:49:33，645 非空）、`MarkdownBlock.ets` `958FA0B491F6967C`（18:50:06，291 非空）、`InlineMath.ets` `7FE3E13A1D3935E9`（393 非空）、`CodeBlockView.ets` `2D1E421A40BAE8AB`（145 非空）、`MathBlock.ets` `729AC6C8C06810B1`（165 非空）、`Theme.ets` `AAD7A852CE171EC9`、`PromptPresets.ets` `FF83BEAB6694C98F`（core_context 最新 18:47:54） |
+| 颜色 | base `AE4D60A8BE1785EC` / dark `BC0DE5AECC39373E`，各 64 键一致 |
+| `packages/*` | 仅 `core_context/PromptPresets.ets` 本轮修改（BASE_PROMPT 追加 LaTeX 约定，前缀变更已由 Lead 评估）；core_model/core_protocol/core_plugin mtime 未变 |
+| 未改动 | `ChatRuntimeApi.ets` 仍 `BBEC5EB0320C5919`（11-20 17:38:13）；`main_pages` 4 页 |
+| 行数约束 | `ChatRuntime` 非空 338；`SessionController` 409、`StreamTurnExecutor` 401（≤500）；渲染组件为 UI 层（MarkdownParser 645 非空，UI 组件无 500 限制） |
+| 跨轮回归 | R1→v3.6 全量保持绿（527/527）；v3.6 抽屉/日夜/弹窗断言与 64 键基线更新后仍绿 |
+
+### 20.7 未覆盖项与风险
+
+| # | 风险/未覆盖 | 说明 |
+| --- | --- | --- |
+| 1 | **无真机联调仍成立** | KaTeX Web 公式实际渲染、`javaScriptProxy` 高度回传/自适应、3s 降级、横向滚动跟手、剪贴板写入、链接跳转、长按划选复制、代码块日夜高亮观感均未设备验证 |
+| 2 | **无 API Key** | 真实模型输出 LaTeX 的端到端链路（提示词约定 → 模型输出 → 解析 → 渲染）未联调 |
+| 3 | 资源体积记录 | 实测 katex rawfile 合计 **548.5KB**（js 269KB + css 22.8KB + 20 woff2）；Lead 述「~1.3MB」应为解压/含其他计法，报告按实测记录 |
+| 4 | 构建配置两态 | 工作区本机签名 CLI 报 `11014003`（走 unsigned 回退）；仓库 HEAD 已脱敏但**未产出可安装签名包** |
+| 5 | 解析边界 | `splitBlocks` 的流式未闭合容错、复杂行内提升规则只用纯逻辑用例覆盖；真机长文本/超长公式（高度 4000 夹取）需冒烟 |
+| 6 | 咨询类 warning | 模块重编译 30–33 条 `Function may throw exceptions`，0 error |
+| 7 | 静态门禁基线 | 64 键/12 code-math 值/渲染结构断言为当前基线，后续调整需同步更新 |
+
+**建议真机冒烟清单（v3.7 重点）**：
+1. **代码块**：让模型输出 C++/Python/ArkTS 代码块：8 类 token 日夜高亮正确、横向滚动可达长行、语言栏正确、点复制出「已复制」1.5s 后恢复、剪贴板内容完整、圆角/表头观感正常。
+2. **公式**：提问「泰勒展开」：`$$…$$` 块公式离线渲染（无网/飞行模式也可）、行内 `$x$` 正常、`\begin{align}` 多行对齐、复杂公式高度自适应不截断、加载失败 3s 后降级显示源码；长按划选可复制公式源码。
+3. **列表/链接**：无序列表圆点 5×5 与文字垂直居中、有序列表行高一致、列表项间距 6；链接仅 http/https 可点，点击跳系统浏览器（openLink/startAbility 回退）；标题上 10/下 2 间距。
+4. **回归**：Markdown 渲染、流式增长块签名稳定、抽屉/日夜面板/模型胶囊取消、震动开关、记忆卡、SKILL.md 等 v3/v3.1–v3.6 功能无回归。
+
+### 20.8 结论
+
+- **构建**：最终快照（18:59:22–19:00:12）5/5 BUILD-OK，0 error；工作区本机签名触发 unsigned 回退且恢复无损（工作区 SHA256 前后一致 `0259B43A…`），仓库 HEAD 已脱敏（`signingConfigs: []`）。
+- **用例**：**37 文件 / 527 断言全绿**（0 失败 / 0 跳过）；prepare 53 拷贝/0 告警。
+- **v3.7 三项能力**静态证据齐全：Markdown 列表/链接/划选/标题间距排版修复；零依赖 8 类 token + 7 语言族高亮 + 复制反馈 + 横向滚动；离线 KaTeX 块/行内公式 + 高度自适应 + 3s 降级 + 提示词 LaTeX 约定。
+- **契约**：新增 6 个组件与 rawfile/katex 资源已登记；`PromptPresets` BASE_PROMPT 追加 LaTeX 约定；`ChatRuntimeApi`/`ChatRuntime` 未动；main_pages 4 页；颜色 64 键。
+- **缺陷**：本轮**未发现需要修复的缺陷**。
+- **残余**：真机公式渲染/高度自适应/横向滚动/剪贴板/链接/长按划选与真实模型 LaTeX 输出仍需按 §20.7 冒烟；无真机前不得宣布 v3.7 富文本渲染闭环达成。

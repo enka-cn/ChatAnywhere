@@ -44,6 +44,18 @@ export class Theme {
   static readonly effortBarOff: ResourceColor = $r('app.color.effort_bar_off');
   static readonly effortTextDim: ResourceColor = $r('app.color.effort_text_dim');
   static readonly effortTextBright: ResourceColor = $r('app.color.effort_text_bright');
+  // 代码块（v3.7；codeBg/codeText 复用上方既有定义）
+  static readonly codeHeaderBg: ResourceColor = $r('app.color.code_header_bg');
+  static readonly codeKeyword: ResourceColor = $r('app.color.code_keyword');
+  static readonly codeType: ResourceColor = $r('app.color.code_type');
+  static readonly codeString: ResourceColor = $r('app.color.code_string');
+  static readonly codeNumber: ResourceColor = $r('app.color.code_number');
+  static readonly codeComment: ResourceColor = $r('app.color.code_comment');
+  static readonly codeMacro: ResourceColor = $r('app.color.code_macro');
+  static readonly codeFunction: ResourceColor = $r('app.color.code_function');
+  static readonly codePlain: ResourceColor = $r('app.color.code_plain');
+  // 数学公式行内（v3.7）
+  static readonly mathInline: ResourceColor = $r('app.color.math_inline');
   static readonly pink: ResourceColor = $r('app.color.pink');
   static readonly warning: ResourceColor = $r('app.color.warning');
   static readonly warningSubtle: ResourceColor = $r('app.color.warning_subtle');

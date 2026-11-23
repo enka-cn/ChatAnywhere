@@ -8,6 +8,7 @@
  * 另含 Lead 基建：48 色键（violet/pink）、module.json5 VIBRATE、Theme.violet/pink。
  */
 import { test, assert, summarize } from './_harness.mjs';
+import { verifyCodeMathColors } from './_theme.mjs';
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -140,15 +141,16 @@ test('模型页状态机：modelStatuses 数组 + setModelEnabled + loading→su
 });
 
 // ---------------------------------------------------------------------------
-// 4) Lead 基建：54 色键（violet/pink + 6 effort_*）、VIBRATE 权限、Theme 令牌
+// 4) Lead 基建：64 色键（violet/pink + 6 effort_*）、VIBRATE 权限、Theme 令牌
 // ---------------------------------------------------------------------------
-test('基建：color.json base/dark 各 54 键且含 violet/pink 与 6 个 effort_*，module.json5 含 VIBRATE，Theme 暴露令牌', () => {
+test('基建：color.json base/dark 各 64 键（含 12 code/math）且含 violet/pink 与 6 个 effort_*，module.json5 含 VIBRATE，Theme 暴露令牌', () => {
   const load = (mode) => JSON.parse(read(path.join(RES, mode, 'element', 'color.json')));
   const base = load('base');
   const dark = load('dark');
   const bk = base.color.map((c) => c.name);
   const dk = dark.color.map((c) => c.name);
-  assert.equal(bk.length, 54, `base 颜色键 ${bk.length} ≠ 54（v3.5）`);
+  verifyCodeMathColors(assert, base, dark);
+  assert.equal(bk.length, 64, `base 颜色键 ${bk.length} ≠ 64（v3.5）`);
   assert.deepEqual([...bk].sort(), [...dk].sort(), '深浅色键集合不一致');
   for (const key of ['violet', 'pink']) {
     assert.ok(bk.includes(key), `base 缺少 ${key}`);
@@ -187,7 +189,7 @@ test('基建：color.json base/dark 各 54 键且含 violet/pink 与 6 个 effor
     'effortTextDim', 'effortTextBright']) {
     assert.ok(theme.includes(key), `Theme.ets 未暴露暗舱令牌 ${key}`);
   }
-  console.log('  证据：54 键含 violet/pink + 6 effort_*；module.json5 含 VIBRATE；Theme 暴露暗舱令牌');
+  console.log('  证据：64 键含 violet/pink + 6 effort_*；module.json5 含 VIBRATE；Theme 暴露暗舱令牌');
 });
 
 test('颜色/文案纪律覆盖新增组件：ReasoningEffortPanel + ModelProbeChip 无硬编码色值、无教学文案', () => {

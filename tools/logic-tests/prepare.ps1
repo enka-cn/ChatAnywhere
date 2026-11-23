@@ -85,6 +85,9 @@ $manifest = @(
   # chat（UI 层）里的纯逻辑：Markdown 块级分块（MarkdownBlock.ets 导出 splitBlocks/parseInline）
   @{ Dir = 'chat/src/main/ets'; Filter = '*Markdown*.ets'; Recurse = $true },
   @{ Dir = 'chat/src/main/ets'; Filter = '*Chunk*.ets'; Recurse = $true },
+  # v3.7：代码高亮（零依赖纯函数）与行内公式 LaTeX→文本映射（纯逻辑）
+  @{ Dir = 'chat/src/main/ets/components'; Filter = 'CodeHighlighter.ets'; Recurse = $false },
+  @{ Dir = 'chat/src/main/ets/components'; Filter = 'InlineMath.ets'; Recurse = $false },
   # v3：6 档思考的纯逻辑（只 import @app/core_protocol 的类型 ThinkingLevel，会被擦除为 import type）
   @{ Dir = 'chat/src/main/ets/app'; Filter = 'EffortLevels.ets'; Recurse = $false }
 )

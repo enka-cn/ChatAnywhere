@@ -9,6 +9,7 @@
  * 3) 无法关闭震动 → `HapticUtil` 总开关（HAPTIC_ENABLED 持久化 + 内存缓存）接入面板与设置页 Toggle。
  */
 import { test, assert, summarize } from './_harness.mjs';
+import { verifyCodeMathColors } from './_theme.mjs';
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -148,13 +149,14 @@ test('设置页总开关：SettingsDataView 含 HAPTIC_ENABLED + HapticUtil + To
 // ---------------------------------------------------------------------------
 // 4) 颜色与纪律
 // ---------------------------------------------------------------------------
-test('颜色：base/dark 各 54 键且集合一致，含 6 个 effort_* + violet/pink', () => {
+test('颜色：base/dark 各 64 键（含 12 code/math）且集合一致，含 6 个 effort_* + violet/pink', () => {
   const load = (mode) => JSON.parse(read(path.join(RES, mode, 'element', 'color.json')));
   const base = load('base');
   const dark = load('dark');
   const bk = base.color.map((c) => c.name);
   const dk = dark.color.map((c) => c.name);
-  assert.equal(bk.length, 54, `base 颜色键 ${bk.length} ≠ 54`);
+  verifyCodeMathColors(assert, base, dark);
+  assert.equal(bk.length, 64, `base 颜色键 ${bk.length} ≠ 64`);
   assert.deepEqual([...bk].sort(), [...dk].sort(), '深浅色键集合不一致');
   const bv = Object.fromEntries(base.color.map((c) => [c.name, String(c.value).toUpperCase()]));
   const dv = Object.fromEntries(dark.color.map((c) => [c.name, String(c.value).toUpperCase()]));
@@ -173,7 +175,7 @@ test('颜色：base/dark 各 54 键且集合一致，含 6 个 effort_* + violet
     assert.equal(dv[key], darkEffort[key], `dark ${key}（夜间暗舱）`);
   }
   assert.ok(bk.includes('violet') && bk.includes('pink'), '缺少既有 violet/pink');
-  console.log('  证据：54 键（48 + 6 effort_* 日夜两套精确值）base/dark 一致，violet/pink 保留');
+  console.log('  证据：64 键（48 + 6 effort_* 日夜两套精确值）base/dark 一致，violet/pink 保留');
 });
 
 test('纪律：新增/改动组件无硬编码色值、无教学文案；@Builder 按值传参仍为 0', () => {

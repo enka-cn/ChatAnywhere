@@ -2,15 +2,23 @@
  * 块级 Markdown 渲染（ArkUI）。
  *
  * 解析逻辑全部在 `MarkdownParser.ets`（纯函数，零平台依赖，可被 Node 逻辑测试直接跑），
+ * 行内公式的 LaTeX→文本映射在 `InlineMath.ets`（同样纯逻辑）。
  * 本文件只负责渲染：历史已闭合块用 `block.id + block.signature` 作 ForEach key，
  * 内容没变就不重建，只有末尾正在增长的那一块刷新。
  *
  * 视觉：颜色/字号/行高全部来自设计令牌（Theme / Layout），支持深浅色自动切换。
  */
+import { common, Want } from '@kit.AbilityKit';
 import { Layout, Theme } from '../app/Theme';
+import { CodeBlockView } from './CodeBlockView';
+import { latexToText } from './InlineMath';
+import { MathBlock } from './MathBlock';
 import { InlineSpan, MdBlock, parseInline, splitBlocks } from './MarkdownParser';
 
 export { parseInline, splitBlocks } from './MarkdownParser';
+
+/** 列表项间距（vp）。 */
+const LIST_GAP: number = 6;
 
 /** 标题字号（1..6）。 */
 function headingSize(level: number): number {
@@ -34,7 +42,7 @@ function gapFor(kind: string): number {
   if (kind === 'heading') {
     return Layout.s4;
   }
-  if (kind === 'code' || kind === 'table') {
+  if (kind === 'code' || kind === 'table' || kind === 'math') {
     return Layout.s3;
   }
   if (kind === 'ulist' || kind === 'olist') {
@@ -52,7 +60,7 @@ function gapFor(kind: string): number {
 export struct MarkdownBlock {
   /** 完整 Markdown 文本（流式时为“当前已经收到的全部文本”）。 */
   @Prop @Watch('onMarkdownChanged') markdown: string = '';
-  /** 正文字号（默认取设计令牌：AI 通栏正文 14.5）。 */
+  /** 正文字号（默认取设计令牌）。 */
   @Prop baseFontSize: number = Layout.fontChat;
 
   @State private blocks: MdBlock[] = [];
@@ -67,36 +75,95 @@ export struct MarkdownBlock {
   }
 
   // -------------------------------------------------------------------------
+  // 链接打开（http/https 校验；优先 openLink，失败退回 viewData）
+  // -------------------------------------------------------------------------
+
+  private openLink(url: string): void {
+    if (url.length === 0) {
+      return;
+    }
+    const lower: string = url.toLowerCase();
+    if (!lower.startsWith('http://') && !lower.startsWith('https://')) {
+      return;
+    }
+    try {
+      const context: common.UIAbilityContext =
+        this.getUIContext().getHostContext() as common.UIAbilityContext;
+      if (context !== undefined && context !== null) {
+        context.openLink(url).catch(() => {
+          this.startViewData(url);
+        });
+        return;
+      }
+    } catch (e) {
+      // 退回 startAbility
+    }
+    this.startViewData(url);
+  }
+
+  private startViewData(url: string): void {
+    try {
+      const context: common.UIAbilityContext =
+        this.getUIContext().getHostContext() as common.UIAbilityContext;
+      if (context === undefined || context === null) {
+        return;
+      }
+      const want: Want = {
+        action: 'ohos.want.action.viewData',
+        uri: url
+      };
+      context.startAbility(want).catch(() => {
+        // 没有可处理该链接的应用：静默
+      });
+    } catch (e) {
+      // 静默
+    }
+  }
+
+  // -------------------------------------------------------------------------
   // 行内片段
   // -------------------------------------------------------------------------
 
   @Builder
+  inlineSpans(text: string) {
+    ForEach(parseInline(text), (span: InlineSpan) => {
+      if (span.kind === 'bold') {
+        Span(span.text).fontWeight(FontWeight.Bold)
+      } else if (span.kind === 'italic') {
+        Span(span.text).fontStyle(FontStyle.Italic)
+      } else if (span.kind === 'code') {
+        Span(span.text)
+          .fontFamily('monospace')
+          .fontColor(Theme.codeText)
+          .textBackgroundStyle({ color: Theme.codeBg })
+      } else if (span.kind === 'math') {
+        Span(latexToText(span.text))
+          .fontStyle(FontStyle.Italic)
+          .fontColor(Theme.mathInline)
+      } else if (span.kind === 'link') {
+        Span(span.text)
+          .fontColor(Theme.brand)
+          .decoration({ type: TextDecorationType.Underline, color: Theme.brand })
+          .onClick(() => {
+            this.openLink(span.url === undefined ? '' : span.url);
+          })
+      } else {
+        Span(span.text)
+      }
+    }, (span: InlineSpan, index: number) => `${index}_${span.kind}_${span.text.length}_${span.text}`)
+  }
+
+  @Builder
   inlineText(text: string, size: number, weight: FontWeight) {
     Text() {
-      ForEach(parseInline(text), (span: InlineSpan) => {
-        if (span.kind === 'bold') {
-          Span(span.text).fontWeight(FontWeight.Bold)
-        } else if (span.kind === 'italic') {
-          Span(span.text).fontStyle(FontStyle.Italic)
-        } else if (span.kind === 'code') {
-          Span(span.text)
-            .fontFamily('monospace')
-            .fontColor(Theme.codeText)
-            .textBackgroundStyle({ color: Theme.codeBg })
-        } else if (span.kind === 'link') {
-          Span(span.text)
-            .fontColor(Theme.brand)
-            .decoration({ type: TextDecorationType.Underline, color: Theme.brand })
-        } else {
-          Span(span.text)
-        }
-      }, (span: InlineSpan, index: number) => `${index}_${span.kind}_${span.text.length}_${span.text}`)
+      this.inlineSpans(text)
     }
     .fontSize(size)
     .fontColor(Theme.textPrimary)
     .fontWeight(weight)
     .lineHeight(Layout.lineChat)
     .width('100%')
+    .copyOption(CopyOptions.LocalDevice)
   }
 
   // -------------------------------------------------------------------------
@@ -106,21 +173,14 @@ export struct MarkdownBlock {
   @Builder
   headingBlock(block: MdBlock) {
     Text() {
-      ForEach(parseInline(block.text), (span: InlineSpan) => {
-        if (span.kind === 'code') {
-          Span(span.text).fontFamily('monospace').fontColor(Theme.codeText)
-        } else if (span.kind === 'link') {
-          Span(span.text).fontColor(Theme.brand)
-        } else {
-          Span(span.text)
-        }
-      }, (span: InlineSpan, index: number) => `h${index}_${span.text.length}_${span.text}`)
+      this.inlineSpans(block.text)
     }
     .fontSize(headingSize(block.level))
     .fontWeight(FontWeight.Bold)
     .fontColor(Theme.textPrimary)
     .lineHeight(headingSize(block.level) + Layout.s2)
     .width('100%')
+    .margin({ top: 10, bottom: 2 })
   }
 
   @Builder
@@ -140,21 +200,24 @@ export struct MarkdownBlock {
 
   @Builder
   listBlock(block: MdBlock) {
-    Column({ space: Layout.s1 }) {
+    Column({ space: LIST_GAP }) {
       ForEach(block.lines, (item: string, index: number) => {
         Row() {
           if (block.kind === 'olist') {
             Text(`${index + 1}.`)
               .fontSize(this.baseFontSize)
               .fontColor(Theme.textTertiary)
+              .lineHeight(Layout.lineChat)
               .width(Layout.s5)
               .textAlign(TextAlign.End)
           } else {
             Column() {
-              Circle({ width: 4, height: 4 }).fill(Theme.textTertiary)
+              Circle({ width: 5, height: 5 }).fill(Theme.textTertiary)
             }
             .width(Layout.s5)
+            .height(Layout.lineChat)
             .alignItems(HorizontalAlign.End)
+            .justifyContent(FlexAlign.Center)
           }
           Column() {
             this.inlineText(item, this.baseFontSize, FontWeight.Normal)
@@ -171,25 +234,12 @@ export struct MarkdownBlock {
 
   @Builder
   codeBlock(block: MdBlock) {
-    Column({ space: Layout.s1 }) {
-      if (block.language.length > 0) {
-        Text(block.language)
-          .fontSize(Layout.fontCaption)
-          .fontColor(Theme.textTertiary)
-          .width('100%')
-      }
-      Text(block.code)
-        .fontSize(this.baseFontSize - 2)
-        .fontFamily('monospace')
-        .fontColor(Theme.codeText)
-        .lineHeight(Layout.lineTight)
-        .wordBreak(WordBreak.BREAK_ALL)
-        .width('100%')
-    }
-    .width('100%')
-    .padding(Layout.s3)
-    .borderRadius(Layout.radiusM)
-    .backgroundColor(Theme.codeBg)
+    CodeBlockView({ language: block.language, code: block.code })
+  }
+
+  @Builder
+  mathBlock(block: MdBlock) {
+    MathBlock({ code: block.code })
   }
 
   @Builder
@@ -205,6 +255,7 @@ export struct MarkdownBlock {
                 .fontWeight(rowIndex === 0 ? FontWeight.Medium : FontWeight.Normal)
                 .layoutWeight(1)
                 .padding({ left: Layout.s2, right: Layout.s2, top: 6, bottom: 6 })
+                .copyOption(CopyOptions.LocalDevice)
             }, (cell: string, cellIndex: number) => `${cellIndex}_${cell.length}_${cell}`)
           }
           .width('100%')
@@ -234,6 +285,8 @@ export struct MarkdownBlock {
       this.headingBlock(block)
     } else if (block.kind === 'code') {
       this.codeBlock(block)
+    } else if (block.kind === 'math') {
+      this.mathBlock(block)
     } else if (block.kind === 'ulist' || block.kind === 'olist') {
       this.listBlock(block)
     } else if (block.kind === 'quote') {
