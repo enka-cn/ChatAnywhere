@@ -9,6 +9,7 @@ import { ProviderModelRecord, SecretAliases, SettingsKeys } from '@app/core_mode
 import { ConnectionTestResult, ModelProfile, ProtocolKind } from '@app/core_protocol';
 import { AppServices } from '../app/AppServices';
 import { Icons, Layout, Theme } from '../app/Theme';
+import { ModelAddStatus } from './ModelProbeChip';
 import { VendorCard } from './VendorCard';
 
 const PID_DS: string = 'deepseek';
@@ -43,6 +44,8 @@ export struct SettingsModelsView {
   @State private records: ProviderModelRecord[] = [];
   @State private activeModelId: string = '';
   @State private statusText: string = '';
+  /** 模型胶囊四态（key=${providerId}:；整体替换数组触发刷新）。 */
+  @State private modelStatuses: ModelAddStatus[] = [];
 
   aboutToAppear(): void {
     this.load();
@@ -69,6 +72,7 @@ export struct SettingsModelsView {
       }
       await this.reloadCatalog();
       await this.reloadRecords();
+      this.syncStatuses();
     } catch (e) {
       this.setStatus(`${(e as Error).message}`);
     }
@@ -292,6 +296,7 @@ export struct SettingsModelsView {
         await AppServices.get().requireProtocol().catalog.applyDiscoveredModels(providerId, infos);
         await this.reloadRecords();
         await this.reloadCatalog();
+        this.syncStatuses();
         this.setPullResult(providerId, `已发现 ${infos.length} 个模型`);
         this.setStatus(`${title}：${infos.length} 个模型待勾选`);
       }
@@ -301,21 +306,79 @@ export struct SettingsModelsView {
     this.setPulling(providerId, false);
   }
 
-  private async toggleModel(providerId: string, modelId: string, enabled: boolean): Promise<void> {
+  /** 由 RDB 记录重建四态：已启用的回显 success，其余 idle。 */
+  private syncStatuses(): void {
+    const next: ModelAddStatus[] = [];
+    for (const one of this.records) {
+      const entry: ModelAddStatus = {
+        key: `${one.providerId}:${one.modelId}`,
+        status: one.enabled ? 'success' : 'idle',
+        error: ''
+      };
+      next.push(entry);
+    }
+    this.modelStatuses = next;
+  }
+
+  private statusOfKey(key: string): string {
+    for (const one of this.modelStatuses) {
+      if (one.key === key) {
+        return one.status;
+      }
+    }
+    return 'idle';
+  }
+
+  private setStatusFor(key: string, status: string, error: string): void {
+    const next: ModelAddStatus[] = [];
+    let found: boolean = false;
+    for (const one of this.modelStatuses) {
+      if (one.key === key) {
+        const updated: ModelAddStatus = { key: key, status: status, error: error };
+        next.push(updated);
+        found = true;
+      } else {
+        next.push(one);
+      }
+    }
+    if (!found) {
+      const added: ModelAddStatus = { key: key, status: status, error: error };
+      next.push(added);
+    }
+    this.modelStatuses = next;
+  }
+
+  /** 四态添加：idle/error → loading → success；失败回到 error 可重试。 */
+  private async addModel(providerId: string, modelId: string): Promise<void> {
+    const key: string = `${providerId}:${modelId}`;
+    const current: string = this.statusOfKey(key);
+    if (current === 'success' || current === 'loading') {
+      return;
+    }
+    this.setStatusFor(key, 'loading', '');
+    const hadActive: boolean = this.activeModelId.length > 0;
     try {
-      const catalog = AppServices.get().requireProtocol().catalog;
-      await catalog.setModelEnabled(providerId, modelId, enabled);
-      await this.reloadRecords();
-      await this.reloadCatalog();
-      if (enabled && this.activeModelId.length === 0) {
+      const services = AppServices.get();
+      const catalog = services.requireProtocol().catalog;
+      await catalog.setModelEnabled(providerId, modelId, true);
+      await this.load();
+      this.setStatusFor(key, 'success', '');
+      if (!hadActive) {
         const found: ModelProfile | null = catalog.get(providerId, modelId);
         if (found !== null) {
-          await AppServices.get().setActiveProfile(found.providerId, found.modelId);
+          await services.setActiveProfile(found.providerId, found.modelId);
           this.activeModelId = found.modelId;
         }
       }
+      this.setStatus(`${this.titleFor(providerId)}：已添加 ${modelId}`);
     } catch (e) {
-      this.setStatus(`切换失败：${(e as Error).message}`);
+      const raw: string = (e as Error).message;
+      const reason: string = raw.length > 60 ? raw.substring(0, 60) : raw;
+      this.setStatusFor(key, 'error', reason.length > 0 ? reason : '添加失败，请重试');
+    } finally {
+      if (this.statusOfKey(key) === 'loading') {
+        this.setStatusFor(key, 'idle', '');
+      }
     }
   }
 
@@ -414,6 +477,7 @@ export struct SettingsModelsView {
         }
 
         VendorCard({
+          providerId: PID_DS,
           title: 'DeepSeek',
           configured: this.dsConfigured,
           urlEditable: false,
@@ -423,6 +487,7 @@ export struct SettingsModelsView {
           testResult: this.dsTestResult,
           pullResult: this.dsPullResult,
           models: this.recordsFor(PID_DS),
+          statuses: this.modelStatuses,
           onSaveKey: (key: string) => this.saveKey(PID_DS, key),
           onTest: (key: string) => {
             this.test(PID_DS, key);
@@ -430,12 +495,13 @@ export struct SettingsModelsView {
           onPull: (key: string) => {
             this.pull(PID_DS, key);
           },
-          onToggleModel: (modelId: string, enabled: boolean) => {
-            this.toggleModel(PID_DS, modelId, enabled);
+          onAddModel: (modelId: string) => {
+            this.addModel(PID_DS, modelId);
           }
         })
 
         VendorCard({
+          providerId: PID_AN,
           title: 'Anthropic',
           configured: this.anConfigured,
           urlEditable: true,
@@ -445,6 +511,7 @@ export struct SettingsModelsView {
           testResult: this.anTestResult,
           pullResult: this.anPullResult,
           models: this.recordsFor(PID_AN),
+          statuses: this.modelStatuses,
           onSaveKey: (key: string) => this.saveKey(PID_AN, key),
           onTest: (key: string) => {
             this.test(PID_AN, key);
@@ -452,13 +519,14 @@ export struct SettingsModelsView {
           onPull: (key: string) => {
             this.pull(PID_AN, key);
           },
-          onToggleModel: (modelId: string, enabled: boolean) => {
-            this.toggleModel(PID_AN, modelId, enabled);
+          onAddModel: (modelId: string) => {
+            this.addModel(PID_AN, modelId);
           }
         })
 
         Column({ space: Layout.s2 }) {
           VendorCard({
+            providerId: PID_OA,
             title: 'OpenAI 兼容',
             configured: this.oaConfigured,
             urlEditable: true,
@@ -468,15 +536,16 @@ export struct SettingsModelsView {
             testResult: this.oaTestResult,
             pullResult: this.oaPullResult,
             models: this.recordsFor(PID_OA),
-              onSaveKey: (key: string) => this.saveKey(PID_OA, key),
+            statuses: this.modelStatuses,
+            onSaveKey: (key: string) => this.saveKey(PID_OA, key),
             onTest: (key: string) => {
               this.test(PID_OA, key);
             },
             onPull: (key: string) => {
               this.pull(PID_OA, key);
             },
-            onToggleModel: (modelId: string, enabled: boolean) => {
-              this.toggleModel(PID_OA, modelId, enabled);
+            onAddModel: (modelId: string) => {
+              this.addModel(PID_OA, modelId);
             }
           })
           TextInput({ text: this.oaModel, placeholder: '模型名，如 gpt-4o-mini' })

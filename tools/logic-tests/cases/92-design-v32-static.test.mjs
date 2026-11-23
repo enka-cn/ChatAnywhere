@@ -9,6 +9,7 @@
  */
 import { test, assert, summarize } from './_harness.mjs';
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -170,14 +171,15 @@ test('角色二级列表与头像：PersonaProfile 含 avatarIcon/avatarTone，P
   console.log('  证据：PersonaProfile avatarIcon/avatarTone + sanitize 兼容；PersonaAvatars 10×8 + iconOf/toneOf；角色二级切换完整');
 });
 
-test('头像配色资源：base/dark 各 46 键且含 8 个 avatar_bg_*，深浅色一致', () => {
+test('头像配色资源：base/dark 各 48 键且含 8 个 avatar_bg_* 与 violet/pink，深浅色一致', () => {
   const load = (mode) => JSON.parse(read(path.join(RES, mode, 'element', 'color.json')));
   const bk = load('base').color.map((c) => c.name);
   const dk = load('dark').color.map((c) => c.name);
-  assert.equal(bk.length, 46, `base 颜色键 ${bk.length} ≠ 46`);
+  assert.equal(bk.length, 48, `base 颜色键 ${bk.length} ≠ 48（v3.3：40 + 8 avatar_bg_*）`);
   assert.deepEqual([...bk].sort(), [...dk].sort(), '深浅色键集合不一致');
   assert.equal(bk.filter((n) => n.startsWith('avatar_bg_')).length, 8, 'avatar_bg_* 不是 8 个');
-  console.log('  证据：46 键（38 + 8 avatar_bg_*）base/dark 一致');
+  assert.ok(bk.includes('violet') && bk.includes('pink'), '缺少 v3.3 新增 violet/pink 色键');
+  console.log('  证据：48 键（40 + 8 avatar_bg_* + violet/pink）base/dark 一致');
 });
 
 // ---------------------------------------------------------------------------
@@ -191,13 +193,39 @@ test('角色「跟随当前模型」语义：空 modelId 表示跟随当前模�
   console.log('  证据：空 modelId=跟随当前模型，设置页与运行时一致');
 });
 
-test('公开构建配置已脱敏：build-profile.local.json5 存在且被 .gitignore 忽略（仓库不含签名材料）', () => {
-  const profile = read(path.join(REPO, 'build-profile.json5'));
-  assert.ok(/"signingConfigs"\s*:\s*\[\s*\]/.test(profile), 'build-profile.json5 的 signingConfigs 未脱敏为空数组');
-  assert.ok(exists(path.join(REPO, 'build-profile.local.json5')), '缺少本机签名材料备份 build-profile.local.json5');
+test('公开仓库构建配置已脱敏：git HEAD 版本 signingConfigs=[] 且无签名材料，本机签名仅存于 gitignore 备份', () => {
+  // 本机工作区可能保留已签名的 build-profile.json5（通过 `git update-index --skip-worktree` 隐藏），
+  // 因此「仓库版本」必须从 git HEAD 读取；无 git 时退化为读工作区（并给出降级说明）。
+  const worktreePath = path.join(REPO, 'build-profile.json5');
+  const gitDir = path.join(REPO, '.git');
+  let repoProfile = '';
+  let source = '';
+  if (exists(gitDir)) {
+    try {
+      repoProfile = execFileSync('git', ['-C', REPO, 'show', 'HEAD:build-profile.json5'], { encoding: 'utf8' });
+      source = 'git HEAD:build-profile.json5';
+    } catch (e) {
+      repoProfile = '';
+    }
+  }
+  if (repoProfile.length === 0) {
+    repoProfile = read(worktreePath);
+    source = '工作区 build-profile.json5（无 git / 读取失败，降级）';
+  }
+  assert.ok(/"signingConfigs"\s*:\s*\[\s*\]/.test(repoProfile),
+    `${source} 的 signingConfigs 不是空数组（公开仓库应脱敏）`);
+  for (const forbidden of ['certpath', 'keyPassword', 'storePassword', 'C:\\Users', 'C:/Users']) {
+    assert.ok(!repoProfile.includes(forbidden), `${source} 含敏感签名信息：${forbidden}`);
+  }
+  assert.ok(/"signingConfig"\s*:\s*"default"/.test(repoProfile),
+    `${source} 的 product 未保留 "signingConfig": "default" 绑定引用`);
+
+  // 本机签名两态：工作区可保留本机签名材料，但必须只在被 gitignore 的 local 备份里
+  assert.ok(exists(path.join(REPO, 'build-profile.local.json5')),
+    '缺少本机签名材料备份 build-profile.local.json5');
   assert.ok(read(path.join(REPO, '.gitignore')).includes('build-profile.local.json5'),
     '.gitignore 未忽略 build-profile.local.json5');
-  console.log('  证据：signingConfigs=[]；本机签名材料仅在 gitignore 的 build-profile.local.json5');
+  console.log(`  证据：${source} signingConfigs=[]、无 certpath/keyPassword/storePassword/用户路径、product signingConfig=default；本机材料仅在 gitignore 的 build-profile.local.json5`);
 });
 
 summarize();

@@ -183,6 +183,14 @@
     {
       "name": "avatar_bg_cyan",
       "value": "#E4F1F6"
+    },
+    {
+      "name": "violet",
+      "value": "#7C3AED"
+    },
+    {
+      "name": "pink",
+      "value": "#EC4899"
     }
   ]
 }

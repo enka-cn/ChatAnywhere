@@ -39,9 +39,9 @@ const count = (text, re) => (text.match(re) || []).length;
 const chatFiles = walk(CHAT_ETS, /\.(ets|ts)$/);
 
 // ---------------------------------------------------------------------------
-// 1) v3/v3.2 色板：46 键 + 设计稿精确色值
+// 1) v3/v3.3 色板：48 键 + 设计稿精确色值
 // ---------------------------------------------------------------------------
-test('v3.2 色板：base/dark 各 46 键且键集合一致，品牌/气泡/页面底色精确匹配设计稿', () => {
+test('v3.3 色板：base/dark 各 48 键且键集合一致，品牌/气泡/页面底色精确匹配设计稿', () => {
   const base = JSON.parse(read(path.join(RES, 'base', 'element', 'color.json')));
   const dark = JSON.parse(read(path.join(RES, 'dark', 'element', 'color.json')));
   const map = (json) => {
@@ -51,7 +51,7 @@ test('v3.2 色板：base/dark 各 46 键且键集合一致，品牌/气泡/页�
   };
   const b = map(base);
   const d = map(dark);
-  assert.equal(Object.keys(b).length, 46, `base 颜色键 ${Object.keys(b).length} ≠ 46（v3.2：38 + 8 头像底色）`);
+  assert.equal(Object.keys(b).length, 48, `base 颜色键 ${Object.keys(b).length} ≠ 48（v3.3：40 + 8 头像底色）`);
   assert.deepEqual(Object.keys(b).sort(), Object.keys(d).sort(), '深浅色键集合不一致');
   assert.equal(Object.keys(b).filter((n) => n.startsWith('avatar_bg_')).length, 8, 'avatar_bg_* 不是 8 个');
   const expect = (name, baseValue, darkValue) => {
@@ -61,7 +61,9 @@ test('v3.2 色板：base/dark 各 46 键且键集合一致，品牌/气泡/页�
   expect('brand', '#2563EB', '#4F83FF');
   expect('bubble_user', '#111827', '#2563EB');
   expect('bg_page', '#FFFFFF', '#0E1014');
-  console.log('  证据：46 键一致（含 8 个 avatar_bg_*）；brand #2563EB/#4F83FF，bubble_user #111827/#2563EB，bg_page #FFFFFF/#0E1014');
+  expect('violet', '#7C3AED', '#8B5CF6');
+  expect('pink', '#EC4899', '#F472B6');
+  console.log('  证据：48 键一致（含 violet/pink + 8 个 avatar_bg_*）；brand #2563EB/#4F83FF，bubble_user #111827/#2563EB，bg_page #FFFFFF/#0E1014');
 });
 
 // ---------------------------------------------------------------------------

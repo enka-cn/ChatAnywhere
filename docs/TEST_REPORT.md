@@ -777,3 +777,117 @@ Warnings 仍为 `Function may throw exceptions` 咨询类（`RdbRepository`/`Ses
 - **契约**：core_model/core_protocol 为新增能力且已登记；`main_pages` 4 页；行数约束保持。
 - **缺陷**：本轮**未发现需要修复的缺陷**。
 - **残余**：真实网络/真机链路（Key 保存刷新、测试连接、真实 /models、RDB 重启保持、观感）仍需按 §15.7 冒烟；无真机前不得宣布 v3.2 真机反馈闭环达成。
+
+---
+
+## 16. v3.3 交互与动效升级验收（抽屉关闭 / 四态模型胶囊 / 6 档特效面板）
+
+> 验收人：`qa-verify`；数据快照：构建 2026-11-23 10:46:10–10:47:0x；用例 2026-11-23 10:46:07（Asia/Shanghai）。
+> 范围（task-27/28）：① 折叠抽屉「点右空白/左滑」关闭；② 模型添加四态胶囊（idle/loading/success/error）；③ 6 档思考特效面板 + 振动兜底。
+> **验证前提不变**：无真机联调（无设备 / 无 API Key）；验证 = ArkTS 编译期类型检查 + 纯逻辑单测 + v3.3 静态断言 + 代码审查。
+> 构建配置为**两态**：工作区保留本机签名（`skip-worktree` 隐藏、不会提交），仓库 HEAD 版本已脱敏（`signingConfigs: []`）。
+
+### 16.1 改动面（git 工作区）
+
+v3.3 应用范围 = 8 个已跟踪文件修改 + 2 个新增组件（`git status` 实测；README/DEV_GUIDE 为同轮文档改动）：
+
+| 文件 | 变化 |
+| --- | --- |
+| `pages/ChatPage.ets` | 折叠抽屉：装饰 `Blank()` → 右空白可点关闭容器；`drawerDragX + translate` 跟手；`PanGesture(PanDirection.Left, distance: 8)`，`offsetX < -48` 关闭 |
+| `components/ModelProbeChip.ets`（新增，139 行） | 四态模型添加胶囊（idle/loading/success/error） |
+| `components/VendorCard.ets` | chips 区渲染 `ModelProbeChip` |
+| `components/SettingsModelsView.ets` | `modelStatuses: ModelAddStatus[]` 整体替换 + `setModelEnabled` 成功/失败流转 + enabled 回显 success |
+| `components/ReasoningEffortPanel.ets`（新增，304 行） | 6 档面板：三层品牌色叠层、sparkles/thinking 徽章 + 同心 Circle 光环、档位字弹跳、振动 try/catch + 去抖 |
+| `components/ModelCapsule.ets` | 接入 `ReasoningEffortPanel`，内联 Slider 清零 |
+| `resources/{base,dark}/element/color.json` | 各 **48 键**（新增 violet `#7C3AED/#8B5CF6`、pink `#EC4899/#F472B6`） |
+| `module.json5` | 新增 `ohos.permission.VIBRATE` |
+| `app/Theme.ets` | 新增 `violet/pink` 令牌 |
+
+### 16.2 构建矩阵（本机签名态触发 unsigned 回退；仓库态脱敏）
+
+| 目标 | 结果 | 开始时间 | 日志 | 备注 |
+| --- | --- | --- | --- | --- |
+| `core_model` | **BUILD-OK** | 10:46:10 | `build-logs/core_model-20261123-104611.log` | 0 error / 30 warning |
+| `core_protocol` | **BUILD-OK** | 10:46:24 | `build-logs/core_protocol-20261123-104624.log` | 0 error / 32 warning |
+| `core_context` | **BUILD-OK** | 10:46:36 | `build-logs/core_context-20261123-104636.log` | 0 error / 30 warning |
+| `core_plugin` | **BUILD-OK** | 10:46:47 | `build-logs/core_plugin-20261123-104648.log` | 0 error / 33 warning |
+| `chat`（entry HAP，含全部 HAR） | **BUILD-OK [unsigned verification]** | 10:47:01 | `build-logs/all-20261123-104701-unsigned.log` | 0 error / 30 warning；工作区本机签名在 CLI 下报 `11014003` → 脚本临时跳过签名重试并自动恢复 |
+
+| 构建配置两态 | 证据 |
+| --- | --- |
+| 工作区（本机签名） | `build-profile.json5` SHA256 构建前 = 构建后 = `0259B43A…35C665`（2448B）；`git update-index --skip-worktree` 隐藏，不会提交 |
+| 仓库 HEAD（公开脱敏） | `git show HEAD:build-profile.json5` SHA256 前 16 = `781A762B56A7A391`；`signingConfigs: []`、无 `certpath/keyPassword/storePassword/C:\Users`、product 保留 `"signingConfig": "default"` |
+| 本机材料备份 | `build-profile.local.json5` 存在且被 `.gitignore` 忽略 |
+
+说明：模块重编译出现的 30/32/30/33 条 warning 均为 `ArkTS:WARN Function may throw exceptions.`（RdbRepository/SessionExporter/RcpStreamClient/NetHttp 等平台 API 建议提示），0 error；非 v3.3 引入。
+
+### 16.3 用例统计（最终）
+
+| 指标 | 值 |
+| --- | --- |
+| 运行时间 | **2026-11-23 10:46:07** |
+| 用例文件 | **31 个** |
+| 断言级用例 | **481 条** |
+| 通过 / 失败 / 跳过 | **481 / 0 / 0** |
+| 结果 | `RESULT: PASS`（`run.ps1` 退出码 0） |
+| prepare 产物 | 拷贝 51 个纯逻辑文件；跳过 5；清单未命中 1；0 告警 |
+
+基线更新（仅测试侧）：`90/91/92` 色键 **46 → 48**（并断言 violet/pink 精确值）；`92` 的「构建配置脱敏」改为**读取 `git show HEAD:build-profile.json5`**（工作区可能是本机签名态），断言仓库版本 `signingConfigs=[]` 且无敏感字段，同时断言 `build-profile.local.json5` 存在且被 gitignore；**新增 `93-design-v33-static.test.mjs`**（6 条 v3.3 断言）。
+
+### 16.4 三项改动证据（`93` 6/6 通过）
+
+| 项 | 证据（文件:行/数量） |
+| --- | --- |
+| ① 抽屉关闭三入口 | `ChatPage.ets:1772–1818` 抽屉区块：scrim `onClick → drawerOpen=false`（:1779）、抽屉 `translate({ x: this.drawerDragX })`（:1789）、`PanGesture({ direction: PanDirection.Left, distance: 8 })`（:1791）、`const shouldClose = e.offsetX < -48`（:1795）、右空白 `Column().layoutWeight(1).height('100%').onClick(...)`（:1809–1812）；区块内**无装饰 `Blank()`**，关闭入口 **3 处** |
+| ② 四态模型胶囊 | `ModelProbeChip.ets` 139 行：`@Prop status`（:26）；`idleChip`(:36)/`loadingChip`(:57, `LoadingProgress`:59)/`successChip`(:74, `Icons.check`:76, `successSubtle`:87)/`errorChip`(:92, `Icons.retry`:95, `dangerSubtle`:106)；switch 分派 :127–134；`VendorCard.ets:9` import + `:192` 渲染；`SettingsModelsView.ets:48` `modelStatuses`、`:332` `setStatusFor`、`:315` enabled→success 回显、添加流程 :351–380（idle/error→loading→success，失败回 error 可重试，调用 `catalog.setModelEnabled`） |
+| ③ 6 档特效面板 | `ReasoningEffortPanel.ets` 304 行：`vibrator` import(:13)、`private vibrate()`(:148)、`try {`(:153)/`catch`(:160)、`vibrator.startVibration`(:157)（去抖 `lastVibrated` + 不 await）；三层叠层渐变 `backgroundColor(Theme.brand)`(:240)/`Theme.violet`(:246)/`Theme.pink`(:252)（opacity 随档位过渡）；同心 `Circle` 光环(:184/:188)；`Icons.thinking → Icons.sparkles`(:192)；`ModelCapsule.ets:10` import + `:134` 使用；`ModelCapsule` 内**无 `Slider(`**（内联滑块已移入面板） |
+| Lead 基建 | `color.json` base/dark 各 **48 键**（v3.3 指纹：base `7752411019C6C472`、dark `F622FCE70588D9FE`），violet `#7C3AED/#8B5CF6`、pink `#EC4899/#F472B6`；`module.json5:21` 含 `ohos.permission.VIBRATE`；`Theme.ets:39/40` 暴露 violet/pink |
+| 纪律扫描 | 新增两个组件 **0 个 `#RRGGBB` 硬编码**、**0 个教学文案关键词**；全仓扫描（`90/91`）同步覆盖 48 色键与新增组件 |
+
+### 16.5 静态断言总览
+
+| 文件 | 结果 | 覆盖 |
+| --- | --- | --- |
+| `93-design-v33-static` | **6/6 PASS** | 抽屉三入口/左滑 -48、四态胶囊、6 档面板振动兜底、48 色键 + VIBRATE + Theme、新增组件纪律 |
+| `92-design-v32-static` | **11/11 PASS** | v3.2 三项 Bug 根因 + 头像 10×8 + 48 色键 + git HEAD 脱敏断言 |
+| `91-design-v3-static` | **15/15 PASS** | v3/v3.1 设计基线 + 46→48 色键（含 violet/pink 精确值） |
+| `90-refactor-static` | **11/11 PASS** | 48 色键/20 interfaces/git HEAD 脱敏/入口/L3/虚列表/契约/行数 |
+| 合计 | **43/43 PASS** | — |
+
+### 16.6 契约 / 回归
+
+| 项 | 证据 |
+| --- | --- |
+| `packages/*` 本轮零改动 | 最新源码 mtime 与 v3.2 一致：core_model 11-20 17:42:06、core_protocol 11-20 17:48:47、core_plugin 11-20 17:41:45、core_context 11-19 19:45:16 |
+| `ChatRuntimeApi` / `ChatRuntime` 未动 | 与 v3.2 一致（本轮 git 改动不含 model/） |
+| 入口 | `main_pages.json` 仍 4 页 |
+| 行数约束 | `ChatRuntime.ets` 非空 338 行；`SessionController` 409、`StreamTurnExecutor` 401（`runtime/*` 全部 ≤500） |
+| 跨轮回归 | R1/R2/v3/v3.1/v3.2 全部用例保持绿（481/481）；v3.2 模型目录/探测/注册表断言无回归 |
+| 构建配置两态 | 工作区本机签名（`0259B43A…`，skip-worktree 隐藏）；仓库 HEAD 脱敏（`781A762B…`，`signingConfigs: []`）；本机备份 `build-profile.local.json5` 被 gitignore |
+
+### 16.7 未覆盖项与风险
+
+| # | 风险/未覆盖 | 说明 |
+| --- | --- | --- |
+| 1 | **无真机联调仍成立** | 抽屉左滑跟手/阀值手感、点击右空白关闭、振动马达触感（VIBRATE 权限实际授权）、渐变/光环呼吸观感、档位字弹跳、loading 转圈均未设备验证 |
+| 2 | **无 API Key** | 四态胶囊的真实添加链路（真实 `/models` → 勾选 → `setModelEnabled` 成功/失败）未联调 |
+| 3 | 构建配置两态 | 工作区本机签名在 CLI 下仍报 `11014003`（走 unsigned 回退）；仓库版本已脱敏，但**未产出可安装签名包** |
+| 4 | 振动兼容性 | `vibrator.startVibration` 已 try/catch + `.catch()` 兜底；无马达/无权限设备上的静默表现需真机确认 |
+| 5 | 咨询类 warning | 模块重编译 30–33 条 `Function may throw exceptions`（平台 API 建议提示），0 error |
+| 6 | 静态门禁基线 | 48 色键/20 interfaces/阈值 -48/四态文案等为当前基线，后续再调交互需同步更新断言 |
+| 7 | git 工作区两态 | `build-profile.json5` 被 skip-worktree 隐藏，`git status` 不显示其本机修改；CI 上需确保使用仓库脱敏版本 |
+
+**建议真机冒烟清单（v3.3 重点）**：
+1. **抽屉**：折叠态打开抽屉 → 手指在抽屉面板上向左慢滑（跟手位移、松手回弹）→ 滑过约 1/6 宽度松手自动关闭；在右侧空白区点一下立即关闭；遮罩点击关闭；关闭动画 120Hz 平滑无跳变。
+2. **四态模型**：设置→模型与密钥 → 拉取模型后逐个「+ 模型名」：点击后进入 loading（转圈、防连点）→ 成功变绿勾（success）→ 再点不重复添加；断网/错误 Key 时变红「重新添加」+ 失败原因，点击可重试；已启用模型进页面回显 success。
+3. **6 档面板**：打开模型胶囊 → 思考强度面板：拖动滑条 6 档字弹跳、背景品牌蓝/紫/粉随档位渐变、光环呼吸；每档切换有轻振动（无马达/无权限静默不崩）；关闭面板后胶囊短标签同步。
+4. **回归**：折叠/展开、模型胶囊 6 档、角色头像、附件、记忆卡、SKILL.md 编辑等 v3/v3.1/v3.2 功能无回归。
+
+### 16.8 结论
+
+- **构建**：最终快照（10:46:10–10:47:0x）5/5 BUILD-OK，0 error；工作区本机签名触发 unsigned 回退且恢复无损（工作区 SHA256 前后一致 `0259B43A…`），仓库 HEAD 已脱敏（`signingConfigs: []`）。
+- **用例**：**31 文件 / 481 断言全绿**（0 失败 / 0 跳过）；prepare 51 拷贝/0 告警。
+- **v3.3 三项改动**静态证据齐全：抽屉三入口 + 左滑 -48 阈值、ModelProbeChip 四态 + 模型页状态机、ReasoningEffortPanel 叠层/光环/振动兜底 + ModelCapsule 接入且内联 Slider 清零；基础设施（48 色键/VIBRATE/Theme 令牌）全部落地。
+- **契约**：packages 与 ChatRuntimeApi/​ChatRuntime 本轮零改动；main_pages 4 页；行数约束保持。
+- **缺陷**：本轮**未发现需要修复的缺陷**。
+- **残余**：真机交互/振动/动效观感与真实模型添加链路仍需按 §16.7 冒烟；无真机前不得宣布 v3.3 交互 DoD 达成。

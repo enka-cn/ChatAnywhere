@@ -5,7 +5,7 @@
 > UI 按 [`docs/design/chatanywhere_v3_pura_x_max.html`](docs/design/chatanywhere_v3_pura_x_max.html) 设计稿落地：**华为 Pura X Max 折叠形态（5.4″ 外屏 / 7.7″ 阔内屏）双栏 Master-Detail**、6 档思考、Cherry Studio 级角色配置、SKILL.md 编辑器。
 >
 > **交付状态**：4 个 HAR + entry HAP 全部落地，`hvigor assembleHap` **BUILD SUCCESSFUL**；
-> 纯逻辑 Node 单测 **30 个文件 / 475 条断言全绿**（含 37 项设计/架构静态门禁）；受环境限制（无签名证书、无模型 API Key）未做真机联调，详见 [§5 已知限制](#5-已知限制透明说明)。
+> 纯逻辑 Node 单测 **31 个文件 / 481 条断言全绿**（含 43 项设计/架构静态门禁）；受环境限制（无签名证书、无模型 API Key）未做真机联调，详见 [§5 已知限制](#5-已知限制透明说明)。
 
 ---
 
@@ -86,7 +86,7 @@ ChatAnyWhere/
 │       │                   SettingsController / PromptComposer / NodeFactory 等（均 ≤500 行）
 │       ├── pages/          ChatPage（双栏/折叠主对话页）、SkillCreatorPage（SKILL.md 编辑器）、
 │       │                   SkillManagerPage（技能 Master-Detail）、SettingsPage（设置 Master-Detail）
-│       ├── components/     IconBtn（统一图标按钮）、VendorCard（模型厂商卡）、PersonaAvatarPicker（头像选择）、MarkdownBlock、StreamingMessage、MemoryGaugeBar、MessageDataSource、
+│       ├── components/     IconBtn（统一图标按钮）、VendorCard（模型厂商卡）、ModelProbeChip（模型添加四态）、ReasoningEffortPanel（6 档思考特效）、PersonaAvatarPicker（头像选择）、MarkdownBlock、StreamingMessage、MemoryGaugeBar、MessageDataSource、
 │       │                   SessionDrawer、SourcePane、AttachSheet、PersonaSheet、ModelCapsule、BranchSelector、
 │       │                   Settings*View（角色/模型/记忆/跨端）、SkillCard、SkillDetailView、ConfigForm、
 │       │                   CreatorMasterList、SkillMdPreview
@@ -136,6 +136,9 @@ ChatAnyWhere/
 | 设计系统（v3.1） | chat/app/Theme.ets + components/IconBtn.ets | Pura X Max 精确色板（品牌蓝 `#2563EB`/`#4F83FF`）、原生舒适字号阶梯（正文档 15.5/行高 26）、尺寸（顶栏 48/折叠 44、栏宽 232·236·220、信源 288、输入圆角 24）、`IconBtn` 统一居中图标按钮（按压微缩反馈）；`base/dark` 46 键（含 8 个角色头像低饱和底色）；禁止硬编码色值 |
 | 角色与提示词（v3.2） | chat/app + SettingsPersonaView | **二级视图**：一级纵向列表（40×40 圆形头像 + 名称 + 默认标识 + 绑定模型摘要 + 右箭头，支持搜索/新建）→ 二级编辑（头像可选 10 图标 × 8 低饱和配色、提示词/采样参数/技能绑定/复制/删除/设默认）；`avatarIcon/avatarTone` 旧数据兼容 |
 | 真实模型与密钥（v3.2） | core_protocol + core_model + SettingsModelsView | **不再内置任何占位模型**：厂商预设 + 真实 `/models` 探测（DeepSeek / Anthropic / OpenAI 兼容），探测结果落 RDB `provider_models`，勾选启用的模型才出现在顶栏与角色配置；测试连接/拉取支持输入框未保存的新 Key；`VendorCard` 独立组件修复状态不刷新 |
+| 思考强度特效（v3.3） | chat | `ReasoningEffortPanel`：6 档渐变背景（雾灰→清透蓝→品牌蓝→蓝紫→蓝紫粉流光 + 亮边）、能量徽章同心呼吸光环、滑条动态色、档位大字弹跳、跨档线性马达触感（无硬件静默降级） |
+| 模型添加四态（v3.3） | chat | `ModelProbeChip`：待添加（+）/ 添加中（LoadingProgress 防连点）/ 成功（绿底绿勾）/ 失败（红底重试 + 原因），真实落库后成功态回显 |
+| 折叠抽屉手势（v3.3） | chat | 折叠态会话抽屉支持三入口关闭：点遮罩、点右侧空白、左滑超过 48vp（`PanGesture`）；打开时平滑滑出 |
 | 记忆与缓存（v3.2） | chat | 设置页显示**当前对话**（标题/消息数/上下文 Token 与窗口占比/缓存命中率）+「立即整理记忆」；**最近整理结果**（时间、整理前 → 整理后 Token、可展开摘要全文） |
 | 设置与技能管理（v3） | chat | 设置 Master-Detail（角色与提示词 / 模型与密钥 / 记忆与缓存 / 跨端与数据，`category` 直达）；技能 Master-Detail（开关、schema 参数、回滚/试跑/导出/删除、编辑 SKILL.md） |
 | 系统桥接 | chat/bridge | 分享链接接收与清洗摘要、后台进度通知、局域网 HTTP 编辑器（裸 TCP） |
@@ -191,6 +194,7 @@ pwsh tools/build.ps1
 | UI 视觉与交互（v3） | 已按 Pura X Max 设计稿落地（双栏/折叠、6 档思考、角色配置、SKILL.md 编辑器、附件、信源栏、记忆条），**无真机渲染验证** | 无设备；静态断言与编译期检查代替（见 TEST_REPORT §13）；折叠手势/键盘避让/深色观感/相册与文档 Picker 需真机冒烟 |
 | 附件能力 | 相册图片/PDF 文档/网页链接可附加并随用户消息落盘（`image`/`file_ref` items）；拍照入口暂不提供 | 拍照需相机权限与额外 Kit 授权；模型侧读图/读文件能力由各厂商适配器降级（部分仅 DeepSeek 支持 `file_id` 引用） |
 | 思考档位厂商差异 | OpenAI 兼容 `xhigh → high`（无 max 档）；DeepSeek `med` 发 `medium`（服务端归一化 high） | 各厂商参数集不同；只会降低思考强度，不会 400（详见 DEV_GUIDE §10.4） |
+| 线性马达触感（v3.3） | 思考档位跨档尝试轻振动（VIBRATE）；无马达/权限拒绝/异常时静默跳过 | 设备能力差异；纯质感增强，不影响功能 |
 
 详细登记见 [`docs/DEV_GUIDE.md`](docs/DEV_GUIDE.md) §7。
 

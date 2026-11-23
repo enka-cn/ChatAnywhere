@@ -189,6 +189,8 @@ struct ChatPage {
   @State private unfolded: boolean = false;
   @State private sidebarCollapsed: boolean = false;
   @State private drawerOpen: boolean = false;
+  /** 折叠抽屉左滑关闭的实时位移（<=0，松手归零）。 */
+  @State private drawerDragX: number = 0;
   @State private sourcePaneOpen: boolean = false;
   @State private sourceNodeId: string = '';
 
@@ -864,6 +866,7 @@ struct ChatPage {
             if (this.unfolded) {
               this.sidebarCollapsed = false;
             } else {
+              this.drawerDragX = 0;
               this.drawerOpen = true;
               this.refreshSessions();
             }
@@ -1783,8 +1786,25 @@ struct ChatPage {
           .width('78%')
           .constraintSize({ maxWidth: Layout.drawerMaxWidth })
           .height('100%')
+          .translate({ x: this.drawerDragX })
           .transition(TransitionEffect.move(TransitionEdge.START).animation({ duration: Layout.animDuration, curve: Curve.EaseOut }))
-          Blank()
+          .gesture(PanGesture({ direction: PanDirection.Left, distance: 8 })
+            .onActionUpdate((e: GestureEvent) => {
+              this.drawerDragX = Math.min(0, e.offsetX);
+            })
+            .onActionEnd((e: GestureEvent) => {
+              const shouldClose: boolean = e.offsetX < -48;
+              this.drawerDragX = 0;
+              if (shouldClose) {
+                this.drawerOpen = false;
+              }
+            }))
+          Column()
+            .layoutWeight(1)
+            .height('100%')
+            .onClick(() => {
+              this.drawerOpen = false;
+            })
         }
         .width('100%')
         .height('100%')

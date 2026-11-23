@@ -6,9 +6,11 @@
  */
 import { ProviderModelRecord } from '@app/core_model';
 import { Icons, Layout, Theme } from '../app/Theme';
+import { ModelAddStatus, ModelProbeChip } from './ModelProbeChip';
 
 @Component
 export struct VendorCard {
+  @Prop providerId: string = '';
   @Prop title: string = '';
   @Prop configured: boolean = false;
   @Prop urlEditable: boolean = false;
@@ -18,16 +20,38 @@ export struct VendorCard {
   @Prop testResult: string = '';
   @Prop pullResult: string = '';
   @Prop models: ProviderModelRecord[] = [];
+  @Prop statuses: ModelAddStatus[] = [];
 
   onSaveKey: (key: string) => Promise<boolean> = (key: string) => Promise.resolve(false);
   onTest: (key: string) => void = (key: string) => {
   };
   onPull: (key: string) => void = (key: string) => {
   };
-  onToggleModel: (modelId: string, enabled: boolean) => void = (modelId: string, enabled: boolean) => {
+  onAddModel: (modelId: string) => void = (modelId: string) => {
   };
 
   @State private keyInput: string = '';
+
+  /** 按 `${providerId}:${modelId}` 取四态。 */
+  private statusOf(modelId: string): string {
+    const key: string = `${this.providerId}:${modelId}`;
+    for (const one of this.statuses) {
+      if (one.key === key) {
+        return one.status;
+      }
+    }
+    return 'idle';
+  }
+
+  private errorOf(modelId: string): string {
+    const key: string = `${this.providerId}:${modelId}`;
+    for (const one of this.statuses) {
+      if (one.key === key) {
+        return one.error;
+      }
+    }
+    return '';
+  }
 
   private save(): void {
     this.onSaveKey(this.keyInput).then((ok: boolean) => {
@@ -165,22 +189,14 @@ export struct VendorCard {
           .padding({ top: Layout.s1 })
         Flex({ wrap: FlexWrap.Wrap }) {
           ForEach(this.models, (one: ProviderModelRecord) => {
-            Row({ space: 4 }) {
-              SymbolGlyph(one.enabled ? Icons.check : Icons.plus)
-                .fontSize(Layout.iconS)
-                .fontColor([one.enabled ? Theme.textOnBrand : Theme.textSecondary])
-              Text(one.displayName.length > 0 ? one.displayName : one.modelId)
-                .fontSize(Layout.fontCaption)
-                .fontColor(one.enabled ? Theme.textOnBrand : Theme.textSecondary)
-                .maxLines(1)
-                .constraintSize({ maxWidth: 180 })
-            }
-            .padding({ left: Layout.s2, right: Layout.s2, top: 4, bottom: 4 })
-            .borderRadius(Layout.radiusPill)
-            .backgroundColor(one.enabled ? Theme.brand : Theme.bgPage)
-            .margin({ right: Layout.s2, bottom: Layout.s2 })
-            .onClick(() => {
-              this.onToggleModel(one.modelId, !one.enabled);
+            ModelProbeChip({
+              modelId: one.modelId,
+              displayName: one.displayName.length > 0 ? one.displayName : one.modelId,
+              status: this.statusOf(one.modelId),
+              errorText: this.errorOf(one.modelId),
+              onTap: (modelId: string) => {
+                this.onAddModel(modelId);
+              }
             })
           }, (one: ProviderModelRecord) => one.modelId)
         }

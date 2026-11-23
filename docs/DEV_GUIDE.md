@@ -157,6 +157,7 @@ UI 页面通过 `AppServices.get()` 拿单例，**不要**自己 new 服务、�
 | v3 采样参数互斥 | Anthropic thinking 开启或已设 temperature 时不透传 `top_p`；OpenAI 推理模型发 `reasoning_effort` 时不透传 `top_p` | 严格端点会因同时采样参数 400 |
 | v3.2 模型目录无占位模型 | `ModelCatalog` 只保留 3 条厂商预设（deepseek/anthropic/openai_compat），**不含任何具体模型 id**；模型必须经用户对真实端点「测试连接 / 拉取模型」后写入 RDB `provider_models` 并勾选启用，才会出现在顶栏与角色配置中；新发现模型默认未勾选 | 避免再次出现"假模型能选但不可用"；无模型时 UI 给中文引导 |
 | v3.2 自定义 OpenAI 兼容端点思考能力 | `supportsThinking` 按模型名启发式（gpt-5*/o1/o3/o4*/*reasoner*/*thinking*/deepseek-r* 等才 true），其余不发送 `reasoning_effort` | 非推理模型被塞 reasoning 参数会 400；启发式宁可少发 |
+| v3.3 线性马达触感 | 思考档位跨档时调用 `vibrator.startVibration`（VIBRATE 权限）；无振动硬件、权限被拒或异常时 `try/catch + .catch()` 静默跳过，不阻塞 UI | 不同设备马达能力不同；只作为质感增强，不影响功能 |
 | v3.2 公开仓库签名配置 | `build-profile.json5` 已脱敏（`signingConfigs: []`），本机签名材料备份在 gitignore 的 `build-profile.local.json5`；DevEco 可一键重新自动签名 | 避免把用户绝对路径/加密口令推进公开 Git |
 
 ## 8. 脱离鸿蒙的纯逻辑自测（QA 提供）
@@ -233,6 +234,7 @@ pwsh tools/logic-tests/run.ps1
 | `bubble_user` | `#111827` | `#2563EB` | 用户气泡（白字） |
 | `text_primary/secondary/tertiary` | `#111318` / `#5A6270` / `#8C94A3` | `#F2F4F8` / `#A1A9B8` / `#6D7585` | 文字三档 |
 | `brand` | `#2563EB` | `#4F83FF` | 全站唯一品牌蓝（开关/选中/链接） |
+| `violet` / `pink` | `#7C3AED` / `#EC4899` | `#8B5CF6` / `#F472B6` | 思考强度 High/xHigh 渐变与光晕（v3.3） |
 | `border` | `#E6E8EE` | `#252934` | 边框/分割 |
 | `warning` / `danger` | `#D97706` / `#DC2626` | `#F59E0B` / `#EF4444` | 记忆提醒 / 停止与错误 |
 

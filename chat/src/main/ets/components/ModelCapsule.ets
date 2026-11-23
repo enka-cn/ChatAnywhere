@@ -1,12 +1,13 @@
 /**
- * 顶栏模型胶囊（v3.2：只展示真实启用模型；无模型时引导去设置拉取）。
+ * 顶栏模型胶囊（v3.3：只展示真实启用模型；无模型时引导去设置拉取）。
  *
- * 有模型：模型名 · 6 档思考短标签 · chevron，半模态 = 模型列表 + 思考强度滑条。
+ * 有模型：模型名 · 6 档思考短标签 · chevron，半模态 = 模型列表 + Codex 风格思考强度面板。
  * 无模型：胶囊显示「未选择模型」，半模态只保留一行「去设置拉取模型」。
  */
 import { ModelProfile, ThinkingLevel } from '@app/core_protocol';
-import { EffortLevels, EffortOption } from '../app/EffortLevels';
+import { EffortLevels } from '../app/EffortLevels';
 import { Icons, Layout, Theme } from '../app/Theme';
+import { ReasoningEffortPanel } from './ReasoningEffortPanel';
 
 /** 厂商短名（半模态列表右侧的灰色说明）。 */
 function vendorLabel(providerId: string): string {
@@ -50,10 +51,6 @@ export struct ModelCapsule {
   pillNormal() {
     .opacity(1)
     .scale({ x: 1, y: 1 })
-  }
-
-  private effortIndex(): number {
-    return EffortLevels.indexOf(this.thinkingLevel);
   }
 
   @Builder
@@ -134,54 +131,12 @@ export struct ModelCapsule {
         }
         .width('100%')
 
-        Column({ space: Layout.s3 }) {
-          Row() {
-            Text('思考强度')
-              .fontSize(Layout.fontBody)
-              .fontWeight(FontWeight.Medium)
-              .fontColor(Theme.textPrimary)
-              .layoutWeight(1)
-            Text(EffortLevels.short(this.thinkingLevel))
-              .fontSize(Layout.fontUi)
-              .fontWeight(FontWeight.Bold)
-              .fontFamily('monospace')
-              .fontColor(Theme.brand)
+        ReasoningEffortPanel({
+          thinkingLevel: this.thinkingLevel,
+          onSelect: (level: ThinkingLevel) => {
+            this.onSelectThinking(level);
           }
-          .width('100%')
-
-          Slider({
-            value: this.effortIndex(),
-            min: 0,
-            max: EffortLevels.ALL.length - 1,
-            step: 1,
-            style: SliderStyle.OutSet
-          })
-            .selectedColor(Theme.brand)
-            .blockColor(Theme.brand)
-            .trackThickness(4)
-            .width('100%')
-            .onChange((value: number, mode: SliderChangeMode) => {
-              this.onSelectThinking(EffortLevels.byIndex(Math.round(value)).level);
-            })
-
-          Row() {
-            ForEach(EffortLevels.ALL, (option: EffortOption, index: number) => {
-              Text(option.short)
-                .fontSize(Layout.fontCaption)
-                .fontFamily('monospace')
-                .fontWeight(index === this.effortIndex() ? FontWeight.Medium : FontWeight.Normal)
-                .fontColor(index === this.effortIndex() ? Theme.brand : Theme.textTertiary)
-                .layoutWeight(1)
-                .textAlign(TextAlign.Center)
-            }, (option: EffortOption) => option.level)
-          }
-          .width('100%')
-        }
-        .width('100%')
-        .padding({ left: Layout.s4, right: Layout.s4, top: Layout.s4, bottom: Layout.s3 })
-        .borderRadius(Layout.radiusL)
-        .backgroundColor(Theme.bgSurface)
-        .border({ width: 1, color: Theme.border })
+        })
       }
     }
     .width('100%')

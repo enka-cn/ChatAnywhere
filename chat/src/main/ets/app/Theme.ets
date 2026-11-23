@@ -36,6 +36,8 @@ export class Theme {
 
   static readonly danger: ResourceColor = $r('app.color.danger');
   static readonly dangerSubtle: ResourceColor = $r('app.color.danger_subtle');
+  static readonly violet: ResourceColor = $r('app.color.violet');
+  static readonly pink: ResourceColor = $r('app.color.pink');
   static readonly warning: ResourceColor = $r('app.color.warning');
   static readonly warningSubtle: ResourceColor = $r('app.color.warning_subtle');
   static readonly success: ResourceColor = $r('app.color.success');
