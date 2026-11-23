@@ -261,6 +261,13 @@ export class AppServices {
     await repo.putString(SettingsKeys.ACTIVE_MODEL, modelId);
   }
 
+  /** 清空当前模型（v3.3：取消最后一个已启用模型时用）。 */
+  async clearActiveProfile(): Promise<void> {
+    const repo = this.requireModel().repo;
+    await repo.putString(SettingsKeys.ACTIVE_PROVIDER, '');
+    await repo.putString(SettingsKeys.ACTIVE_MODEL, '');
+  }
+
   /** 当前思考档位（6 档；兼容迁移旧的 quick/deep 存储值）。 */
   async currentThinkingLevel(): Promise<ThinkingLevel> {
     const raw: string = await this.requireModel().repo.getString(SettingsKeys.THINKING_LEVEL, 'med');

@@ -891,3 +891,115 @@ v3.3 应用范围 = 8 个已跟踪文件修改 + 2 个新增组件（`git status
 - **契约**：packages 与 ChatRuntimeApi/​ChatRuntime 本轮零改动；main_pages 4 页；行数约束保持。
 - **缺陷**：本轮**未发现需要修复的缺陷**。
 - **残余**：真机交互/振动/动效观感与真实模型添加链路仍需按 §16.7 冒烟；无真机前不得宣布 v3.3 交互 DoD 达成。
+
+---
+
+## 17. v3.4 交互修复验收（抽屉退场动画 / 取消模型 / 能量槽面板）
+
+> 验收人：`qa-verify`；数据快照：构建 2026-11-23 11:07:36–11:08:27；用例 2026-11-23 11:07:26（Asia/Shanghai）。
+> 范围（task-30/31）：① 抽屉退场动画（状态变化收口 `setDrawerOpen` + animateTo + 子节点 transition）；② 模型胶囊「取消添加」双向链路；③ 6 档思考面板删除 Slider → 手写能量槽。
+> **验证前提不变**：无真机联调（无设备 / 无 API Key）；验证 = ArkTS 编译期类型检查 + 纯逻辑单测 + v3.4 静态断言 + 代码审查。
+> 构建配置两态：工作区保留本机签名（`skip-worktree` 隐藏），仓库 HEAD 已脱敏（`signingConfigs: []`）。
+
+### 17.1 改动面（git 工作区）
+
+v3.4 应用范围 = 8 个已跟踪文件（6 chat + 2 core_protocol）+ README 文档：
+
+| 文件 | 变化 |
+| --- | --- |
+| `pages/ChatPage.ets` | 新增 `setDrawerOpen(open)`：`drawerDragX=0` + `getUIContext().animateTo({ duration: 220, curve: EaseOut })`；**9 处** drawerOpen 赋值全部收口；抽屉 if 块重构为两个直接子节点（scrim OPACITY 220ms / 抽屉层 move(START) 220ms） |
+| `components/ModelProbeChip.ets` | success 恢复可点击（点击=取消）；loading 保持不可点击（防连点）；idle/error 仍可点击添加/重试 |
+| `components/SettingsModelsView.ets` | 新增 `toggleModel()` 双向：success→loading→`catalog.unregister`→`load()`→idle；取消活跃模型自动切换/`clearActiveProfile`；失败保持 success + `toggleError` |
+| `components/VendorCard.ets` | 新增 `notice` 透传（danger 小字错误提示） |
+| `components/ReasoningEffortPanel.ets` | 重做 460 行：自然高度 + 底部安全区、`bgSurface` 卡片 + 顶部柔光、右上 6 格能量柱、删除 Slider → `onAreaChange + onTouch` 吸附能量槽 + 渐变填充 + 白边发光圆钮 |
+| `app/AppServices.ets` | 新增 `async clearActiveProfile()` |
+| `packages/core_protocol/interfaces/ProtocolLayer.ets` | `ModelCatalogApi` 新增 `unregister(providerId, modelId)` |
+| `packages/core_protocol/ModelCatalog.ets` | 实现 `unregister`（关闭 enabled + reload，RDB 记录保留） |
+
+### 17.2 构建矩阵（工作区本机签名态触发 unsigned 回退；仓库态脱敏）
+
+| 目标 | 结果 | 开始时间 | 日志 | 备注 |
+| --- | --- | --- | --- | --- |
+| `core_model` | **BUILD-OK** | 11:07:36 | `build-logs/core_model-20261123-110737.log` | 0 error / 30 warning |
+| `core_protocol` | **BUILD-OK** | 11:07:49 | `build-logs/core_protocol-20261123-110749.log` | 0 error / 32 warning |
+| `core_context` | **BUILD-OK** | 11:08:02 | `build-logs/core_context-20261123-110802.log` | 0 error / 30 warning |
+| `core_plugin` | **BUILD-OK** | 11:08:13 | `build-logs/core_plugin-20261123-110813.log` | 0 error / 33 warning |
+| `chat`（entry HAP，含全部 HAR） | **BUILD-OK [unsigned verification]** | 11:08:26 | `build-logs/all-20261123-110827-unsigned.log` | 0 error / 30 warning；工作区本机签名报 `11014003` → 脚本临时跳过签名重试并自动恢复 |
+
+| 构建配置两态 | 证据 |
+| --- | --- |
+| 工作区（本机签名） | `build-profile.json5` SHA256 构建前 = 后 = `0259B43A…35C665`（2448B）；`skip-worktree` 隐藏，不提交 |
+| 仓库 HEAD（公开脱敏） | `git show HEAD:build-profile.json5`：`signingConfigs: []`、无 certpath/keyPassword/storePassword/用户路径、product 保留 `"signingConfig": "default"` |
+| 本机材料备份 | `build-profile.local.json5` 存在且被 `.gitignore` 忽略 |
+
+warnings 仍为 `ArkTS:WARN Function may throw exceptions.`（平台 API 建议提示，RdbRepository/SessionExporter/RcpStreamClient/NetHttp），0 error。
+
+### 17.3 用例统计（最终）
+
+| 指标 | 值 |
+| --- | --- |
+| 运行时间 | **2026-11-23 11:07:26** |
+| 用例文件 | **32 个** |
+| 断言级用例 | **487 条** |
+| 通过 / 失败 / 跳过 | **487 / 0 / 0** |
+| 结果 | `RESULT: PASS`（`run.ps1` 退出码 0） |
+| prepare 产物 | 拷贝 51 个纯逻辑文件；跳过 5；未命中 1；0 告警 |
+
+基线更新（仅测试侧）：`93-design-v33-static` 的抽屉断言由旧字面量 `this.drawerOpen = false` 改为 v3.4 口径（`setDrawerOpen(` / `animateTo(duration:220)` / `TransitionEffect.OPACITY` / `TransitionEffect.move(TransitionEdge.START)` / `layoutWeight(1)` / `-48` / 无装饰 `Blank()`，并断言 drawerOpen 直接赋值仅 1 处、setDrawerOpen 调用 ≥9 处）；**新增 `94-design-v34-static.test.mjs`**（6 条）。
+
+### 17.4 三项修复证据（`94` 6/6 + 更新后的 `93` 6/6 通过）
+
+| 项 | 证据（文件:行/数量） |
+| --- | --- |
+| ① 抽屉退场动画 | `ChatPage.ets:502` `private setDrawerOpen(open)`：`:503 drawerDragX = 0`、`:504 getUIContext().animateTo({ duration: 220, curve: EaseOut })`；`drawerOpen` 直接赋值全文件仅 **1 处**、`this.setDrawerOpen(` 调用 **9 处**；抽屉块 `:1784` 起：scrim `.transition(TransitionEffect.OPACITY.animation({duration:220}))`(:1791) + 点击关闭、抽屉层 `.transition(TransitionEffect.move(TransitionEdge.START).animation({duration:220}))`(:1813) + `translate(drawerDragX)` + 右空白 `layoutWeight(1)` 点击关闭 + `PanGesture(PanDirection.Left)` `offsetX < -48`(:1819)；区块内无装饰 `Blank()` |
+| ② 取消模型 | `ModelProbeChip.ets`：idle `.onClick`(:51)、**success `.onClick`(:89，取消)**、error `.onClick`(:123，重试)；loadingChip(:57) 无 onClick（防连点）；`SettingsModelsView.ets:321` `toggleModel()`、`:372 catalog.unregister(providerId, modelId)`、`:400 services.clearActiveProfile()`、`:45 toggleError` + `:385/:407` 失败提示、`:456` 透传 `notice`；`VendorCard.ets:25 @Prop notice` + `:208` 渲染 |
+| ③ 能量槽面板 | `ReasoningEffortPanel.ets` 实际 **460 行**（Lead 述 427，按实测记录）：**无 `Slider(`**、无 `height('100%')`（自然高度 + 底部安全区）、0 硬编码色值；`:325 energyBars()` 复用 `ForEach(EffortLevels.ALL)`（6 格阶梯柱）；`:369 energyTrough()` 手写能量槽：`:399 onAreaChange` 记宽度 + `:405 onTouch` 吸附 + `:383 linearGradient` 渐变填充 + `:386/:391 Circle` 光晕/白边圆钮；`:316/:451 bgSurface` + `:436 linearGradient` 顶部柔光；保留 `:301/:305 Circle` 徽章呼吸、`vibrator.startVibration`(:246) + try/catch 兜底 |
+| 契约 | `ProtocolLayer.ets:70 unregister(providerId, modelId)`；`ModelCatalog.ets:247 async unregister(...)`（关闭 enabled + reload，RDB 记录保留）；`AppServices.ets:265 async clearActiveProfile()`；颜色仍 **48 键** base/dark 一致（未新增色键） |
+
+### 17.5 静态断言总览
+
+| 文件 | 结果 | 覆盖 |
+| --- | --- | --- |
+| `94-design-v34-static` | **6/6 PASS** | v3.4 三项修复（退场动画结构/能量槽无 Slider/取消链路/契约/色彩与文案纪律） |
+| `93-design-v33-static` | **6/6 PASS** | v3.3 基线（已更新 setDrawerOpen 口径）+ 四态胶囊 + 48 色键 |
+| `92-design-v32-static` | **11/11 PASS** | v3.2 三项 Bug 根因 + 头像 + 48 色键 + git HEAD 脱敏 |
+| `91-design-v3-static` | **15/15 PASS** | v3/v3.1 设计基线 + 48 色键（violet/pink 精确值） |
+| `90-refactor-static` | **11/11 PASS** | 48 色键/20 interfaces/git HEAD 脱敏/入口/L3/虚列表/行数 |
+| 合计 | **49/49 PASS** | — |
+
+### 17.6 契约 / 回归
+
+| 项 | 证据 |
+| --- | --- |
+| `core_protocol` 本轮新增能力（已登记） | `interfaces/ProtocolLayer.ets` 11-23 10:57:44 `4DC5DBB890EDF04C`（+`ModelCatalogApi.unregister`）；`ModelCatalog.ets` 10:57:44 `ECA401B97B364679`（+`unregister` 实现，关闭 enabled + reload）；`Index.ets` 未变（`24239D429861F111`） |
+| `AppServices` 扩展（已登记） | 11-23 10:57:44 `43830F17FE96959E`（+`clearActiveProfile`） |
+| 未改动 | `ChatRuntimeApi.ets` 仍 `BBEC5EB0320C5919`（11-20 17:38:13，v3.4 未动）；`core_model` 最新 mtime 11-20 17:42:06、`core_context` 11-19 19:45:16、`core_plugin` 11-20 17:41:45（均未动）；`main_pages.json` 仍 4 页 |
+| 行数约束 | `ChatRuntime.ets` 非空 338；`SessionController` 409、`StreamTurnExecutor` 401（`runtime/*` 全部 ≤500）；面板 460 行（UI 组件无 500 限制） |
+| 跨轮回归 | R1→v3.3 全部用例保持绿（487/487）；v3.3 抽屉/四态/面板断言按 v3.4 口径更新后仍绿 |
+
+### 17.7 未覆盖项与风险
+
+| # | 风险/未覆盖 | 说明 |
+| --- | --- | --- |
+| 1 | **无真机联调仍成立** | 抽屉退场动画流畅度（220ms opacity+move）、左滑跟手回弹、三入口关闭手感、能量槽拖动手感（吸附/白边圆钮发光/6 格柱点亮）、档位字弹跳与振动、loading 转圈观感均未设备验证 |
+| 2 | **无 API Key** | 取消添加真实链路（成功取消 → RDB 保留记录 → 列表回 idle；取消活跃模型 → 自动切换/清空）未联网验证 |
+| 3 | 构建配置两态 | 工作区本机签名在 CLI 下仍报 `11014003`（走 unsigned 回退）；仓库 HEAD 已脱敏但**未产出可安装签名包** |
+| 4 | 面板实现与 Lead 描述 | 实际 **460 行**（Lead 述 427），功能断言全部命中；仅作行数记录，不影响判定 |
+| 5 | 振动兼容性 | `vibrator.startVibration` + `.catch()` + try/catch 双层兜底；无马达/无权限设备静默表现需真机确认 |
+| 6 | 咨询类 warning | 模块重编译 30–33 条 `Function may throw exceptions`（平台 API 建议提示），0 error |
+| 7 | 静态门禁基线 | 抽屉 220ms/阈值 -48、能量槽 6 格/圆钮、48 色键等为当前基线，后续调交互需同步更新断言 |
+
+**建议真机冒烟清单（v3.4 重点）**：
+1. **抽屉退场**：折叠态打开抽屉 → 点右空白/遮罩/左滑过 48vp 三种方式关闭，退场 220ms 淡出+左移平滑无跳变；左滑中途松手回弹跟手；快速连点开/关无残影。
+2. **取消模型**：设置→模型与密钥 → 已添加模型点胶囊取消：变 loading（防连点）→ 成功回 idle；取消当前活跃模型后自动切到剩余第一个（顶栏胶囊同步），无剩余模型时顶栏出现无模型引导；断网/错误 Key 时取消失败保持 success + 红色小字原因（VendorCard notice）。
+3. **能量槽**：打开模型胶囊 → 思考强度面板：拖动手写能量槽逐格吸附 0–5、渐变填充与白边发光圆钮跟手、右上 6 格能量柱逐格点亮、档位大字弹跳与振动；面板自然高度、底部安全区不顶到导航条；无 Slider。
+4. **回归**：抽屉三入口、四态添加、6 档短标签、角色头像、记忆卡、SKILL.md 等 v3/v3.1/v3.2/v3.3 功能无回归。
+
+### 17.8 结论
+
+- **构建**：最终快照（11:07:36–11:08:27）5/5 BUILD-OK，0 error；工作区本机签名触发 unsigned 回退且恢复无损（工作区 SHA256 前后一致 `0259B43A…`），仓库 HEAD 已脱敏（`signingConfigs: []`）。
+- **用例**：**32 文件 / 487 断言全绿**（0 失败 / 0 跳过）；prepare 51 拷贝/0 告警。
+- **v3.4 三项修复**静态证据齐全：`setDrawerOpen` 收口 + animateTo 220ms + 两子节点 OPACITY/move(START)；success 可取消 + toggleModel/unregister/clearActiveProfile 双向链路；能量槽面板删除 Slider 改为 onTouch 吸附 + 渐变 + 6 格柱 + 自然高度。
+- **契约**：`ModelCatalogApi.unregister` / `ModelCatalog.unregister` / `AppServices.clearActiveProfile` 已登记；`ChatRuntimeApi`/`ChatRuntime` 未动；main_pages 4 页；颜色仍 48 键。
+- **缺陷**：本轮**未发现需要修复的缺陷**。
+- **残余**：真机退场流畅度/左滑跟手/能量槽手感/取消真实链路仍需按 §17.7 冒烟；无真机前不得宣布 v3.4 交互修复闭环达成。

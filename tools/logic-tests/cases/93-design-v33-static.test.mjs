@@ -40,7 +40,7 @@ const chatFiles = walk(CHAT_ETS, /\.(ets|ts)$/);
 // ---------------------------------------------------------------------------
 // 1) 抽屉关闭：右空白可点容器（替代装饰 Blank） + 左滑手势 + scrim
 // ---------------------------------------------------------------------------
-test('抽屉关闭：右空白为可点击关闭容器（layoutWeight(1)），无装饰 Blank()，含左滑手势阈值 -48', () => {
+test('抽屉关闭：右空白可点容器（layoutWeight(1)）+ 左滑 -48 + 退场动画（OPACITY/START）+ 单一 setDrawerOpen 收口', () => {
   const chatPage = read(path.join(CHAT_ETS, 'pages', 'ChatPage.ets'));
   const start = chatPage.indexOf('// 折叠态会话抽屉');
   assert.ok(start >= 0, 'ChatPage 缺少折叠态会话抽屉区块');
@@ -50,18 +50,24 @@ test('抽屉关闭：右空白为可点击关闭容器（layoutWeight(1)），�
 
   assert.ok(/\.layoutWeight\(1\)/.test(block), '抽屉右空白缺少 layoutWeight(1) 的可点容器（仍是装饰 Blank）');
   assert.ok(!/Blank\(\)/.test(block), '抽屉 Row 内仍有仅装饰的 Blank()');
-  assert.ok(/\.onClick\(\(\)\s*=>\s*\{[\s\S]*?this\.drawerOpen = false/.test(block),
-    '抽屉右空白/遮罩缺少点击关闭 onClick');
+  // v3.4：状态变化统一走 setDrawerOpen(false)（内含 animateTo，保证退场动画）
+  assert.ok(block.includes('this.setDrawerOpen(false)'), '抽屉缺少 setDrawerOpen(false) 关闭调用');
+  assert.ok(chatPage.includes('private setDrawerOpen('), '缺少 setDrawerOpen(open) 统一入口');
+  assert.ok(/getUIContext\(\)\.animateTo\(\{\s*duration:\s*220/.test(chatPage),
+    'setDrawerOpen 未用 animateTo({ duration: 220 }) 包裹状态变化（退场动画会不播放）');
+  assert.ok(block.includes('TransitionEffect.OPACITY'), '遮罩缺少 OPACITY 退场过渡');
+  assert.ok(/TransitionEffect\.move\(TransitionEdge\.START\)/.test(block), '抽屉层缺少 move(START) 退场过渡');
   assert.ok(block.includes('PanGesture'), '抽屉缺少左滑 PanGesture');
   assert.ok(/PanDirection\.Left/.test(block), 'PanGesture 未限定 Left 方向');
   assert.ok(block.includes('-48'), '抽屉左滑关闭阈值缺少 -48');
   assert.ok(block.includes('drawerDragX') && block.includes('.translate('),
     '抽屉缺少 drawerDragX + translate 跟手位移');
 
-  // 三入口：scrim 点击 / 右空白点击 / 手势结束
-  const closeEntries = count(block, /this\.drawerOpen = false/g);
+  // 三入口：scrim 点击 / 右空白点击 / 手势结束；drawerOpen 赋值应收口到 setDrawerOpen 一处
+  const closeEntries = count(block, /this\.setDrawerOpen\(false\)/g);
   assert.ok(closeEntries >= 3, `抽屉关闭入口仅 ${closeEntries} 个（应 ≥3：scrim/右空白/手势）`);
-  console.log(`  证据：抽屉区块 layoutWeight(1) 可点容器 + PanGesture(-48) + drawerDragX/translate，关闭入口 ${closeEntries} 处，无装饰 Blank()`);
+  assert.equal(count(chatPage, /this\.drawerOpen = /g), 1, 'drawerOpen 赋值未收口（应仅 setDrawerOpen 内一处）');
+  console.log(`  证据：setDrawerOpen 统一入口（animateTo 220ms）+ 遮罩 OPACITY/抽屉 move(START) + layoutWeight(1) 右空白点击 + PanGesture(-48)，关闭入口 ${closeEntries} 处、drawerOpen 赋值 1 处`);
 });
 
 // ---------------------------------------------------------------------------

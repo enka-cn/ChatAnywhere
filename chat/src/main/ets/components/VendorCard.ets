@@ -21,6 +21,8 @@ export struct VendorCard {
   @Prop pullResult: string = '';
   @Prop models: ProviderModelRecord[] = [];
   @Prop statuses: ModelAddStatus[] = [];
+  /** 取消失败提示（danger 小字，显示在模型 chips 下方）。 */
+  @Prop notice: string = '';
 
   onSaveKey: (key: string) => Promise<boolean> = (key: string) => Promise.resolve(false);
   onTest: (key: string) => void = (key: string) => {
@@ -201,6 +203,15 @@ export struct VendorCard {
           }, (one: ProviderModelRecord) => one.modelId)
         }
         .width('100%')
+      }
+
+      if (this.notice.length > 0) {
+        Text(this.notice)
+          .fontSize(Layout.fontCaption)
+          .fontColor(Theme.danger)
+          .width('100%')
+          .maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
       }
     }
     .width('100%')

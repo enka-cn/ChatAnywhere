@@ -62,6 +62,12 @@ export interface ModelCatalogApi {
 
   /** 勾选/取消勾选模型并落库。 */
   setModelEnabled(providerId: string, modelId: string, enabled: boolean): Promise<void>;
+
+  /**
+   * 把模型移出可用目录（v3.3 取消添加）：关闭 enabled 并重载；
+   * RDB 探测记录保留（enabled=false），以便胶囊回到 idle 后可再次添加。
+   */
+  unregister(providerId: string, modelId: string): Promise<void>;
 }
 
 /** 内置厂商预设（不含任何具体模型 id）。 */

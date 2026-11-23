@@ -86,6 +86,9 @@ export struct ModelProbeChip {
     .borderRadius(Layout.radiusPill)
     .backgroundColor(Theme.successSubtle)
     .border({ width: 1, color: Theme.success })
+    .onClick(() => {
+      this.onTap(this.modelId);
+    })
   }
 
   @Builder

@@ -240,6 +240,14 @@ export class ModelCatalog implements ModelCatalogApi {
     await this.reload();
   }
 
+  /**
+   * 移出可用目录（取消添加）：关闭 enabled 并重载；探测记录保留在 RDB，
+   * 因此设置页胶囊会回到 idle，用户可再次点击添加。
+   */
+  async unregister(providerId: string, modelId: string): Promise<void> {
+    await this.setModelEnabled(providerId, modelId, false);
+  }
+
   // ------------------------------------------------------------ 内部
 
   /** 从 RDB 注册表重建已启用 profile 列表。 */

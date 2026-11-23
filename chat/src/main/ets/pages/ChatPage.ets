@@ -230,7 +230,7 @@ struct ChatPage {
     this.watcher = Breakpoint.watch(this.getUIContext(), (unfolded: boolean) => {
       this.unfolded = unfolded;
       if (unfolded) {
-        this.drawerOpen = false;
+        this.setDrawerOpen(false);
       } else {
         this.sourcePaneOpen = false;
       }
@@ -493,8 +493,21 @@ struct ChatPage {
   // 会话操作
   // -------------------------------------------------------------------------
 
+  /**
+   * 折叠抽屉开关（统一入口，保证退场动画）。
+   *
+   * `if` 的直接子节点上挂 transition 时，状态变化必须包在 animateTo 里，
+   * 否则节点会立即销毁、退场动画不播放。打开前先把左滑位移归零。
+   */
+  private setDrawerOpen(open: boolean): void {
+    this.drawerDragX = 0;
+    this.getUIContext().animateTo({ duration: 220, curve: Curve.EaseOut }, () => {
+      this.drawerOpen = open;
+    });
+  }
+
   private async newChat(): Promise<void> {
-    this.drawerOpen = false;
+    this.setDrawerOpen(false);
     this.editingNodeId = '';
     this.inputText = '';
     this.pendingAttachments = [];
@@ -506,7 +519,7 @@ struct ChatPage {
   }
 
   private async openSession(sessionId: string): Promise<void> {
-    this.drawerOpen = false;
+    this.setDrawerOpen(false);
     this.editingNodeId = '';
     this.inputText = '';
     this.pendingAttachments = [];
@@ -540,7 +553,7 @@ struct ChatPage {
   }
 
   private navTo(target: number): void {
-    this.drawerOpen = false;
+    this.setDrawerOpen(false);
     if (target === NAV_CREATOR) {
       const params: SkillCreatorParams = { targetSkillId: '', nodeId: '' };
       this.getUIContext().getRouter().pushUrl({ url: RouteUrls.SKILL_CREATOR, params: params }).catch(() => {
@@ -866,8 +879,7 @@ struct ChatPage {
             if (this.unfolded) {
               this.sidebarCollapsed = false;
             } else {
-              this.drawerDragX = 0;
-              this.drawerOpen = true;
+              this.setDrawerOpen(true);
               this.refreshSessions();
             }
           }
@@ -1570,7 +1582,7 @@ struct ChatPage {
         this.openSession(sessionId);
       },
       onClose: () => {
-        this.drawerOpen = false;
+        this.setDrawerOpen(false);
       },
       onCollapse: () => {
       },
@@ -1769,16 +1781,18 @@ struct ChatPage {
       .height('100%')
       .backgroundColor(Theme.bgPage)
 
-      // 折叠态会话抽屉（120Hz 平滑滑出）
+      // 折叠态会话抽屉：if 只有两个直接子节点，transition 必须挂在它们身上才会播放退场动画。
       if (!this.unfolded && this.drawerOpen) {
+        // ① 遮罩：淡入淡出 + 点击关闭
         Column()
           .width('100%')
           .height('100%')
           .backgroundColor(Theme.scrim)
-          .transition(TransitionEffect.OPACITY.animation({ duration: Layout.animDuration, curve: Curve.EaseOut }))
+          .transition(TransitionEffect.OPACITY.animation({ duration: 220, curve: Curve.EaseOut }))
           .onClick(() => {
-            this.drawerOpen = false;
+            this.setDrawerOpen(false);
           })
+        // ② 抽屉层：整层左右移动（左滑跟手），右侧空白点击关闭
         Row() {
           Column() {
             this.drawerForFolded()
@@ -1786,28 +1800,28 @@ struct ChatPage {
           .width('78%')
           .constraintSize({ maxWidth: Layout.drawerMaxWidth })
           .height('100%')
-          .translate({ x: this.drawerDragX })
-          .transition(TransitionEffect.move(TransitionEdge.START).animation({ duration: Layout.animDuration, curve: Curve.EaseOut }))
-          .gesture(PanGesture({ direction: PanDirection.Left, distance: 8 })
-            .onActionUpdate((e: GestureEvent) => {
-              this.drawerDragX = Math.min(0, e.offsetX);
-            })
-            .onActionEnd((e: GestureEvent) => {
-              const shouldClose: boolean = e.offsetX < -48;
-              this.drawerDragX = 0;
-              if (shouldClose) {
-                this.drawerOpen = false;
-              }
-            }))
           Column()
             .layoutWeight(1)
             .height('100%')
             .onClick(() => {
-              this.drawerOpen = false;
+              this.setDrawerOpen(false);
             })
         }
         .width('100%')
         .height('100%')
+        .translate({ x: this.drawerDragX })
+        .transition(TransitionEffect.move(TransitionEdge.START).animation({ duration: 220, curve: Curve.EaseOut }))
+        .gesture(PanGesture({ direction: PanDirection.Left, distance: 8 })
+          .onActionUpdate((e: GestureEvent) => {
+            this.drawerDragX = Math.min(0, e.offsetX);
+          })
+          .onActionEnd((e: GestureEvent) => {
+            const shouldClose: boolean = e.offsetX < -48;
+            this.drawerDragX = 0;
+            if (shouldClose) {
+              this.setDrawerOpen(false);
+            }
+          }))
       }
     }
     .width('100%')
