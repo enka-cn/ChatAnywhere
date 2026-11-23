@@ -56,9 +56,17 @@ test('v3.5 色板：base/dark 各 54 键且键集合一致，品牌/气泡/页�
   assert.equal(Object.keys(b).filter((n) => n.startsWith('avatar_bg_')).length, 8, 'avatar_bg_* 不是 8 个');
   for (const key of ['effort_deck_top', 'effort_deck_bottom', 'effort_track', 'effort_bar_off',
     'effort_text_dim', 'effort_text_bright']) {
-    assert.ok(Object.keys(b).includes(key), `base 缺少 v3.5 暗舱色键 ${key}`);
-    assert.ok(Object.keys(d).includes(key), `dark 缺少 v3.5 暗舱色键 ${key}`);
+    assert.ok(Object.keys(b).includes(key), `base 缺少 v3.6 暗舱色键 ${key}`);
+    assert.ok(Object.keys(d).includes(key), `dark 缺少 v3.6 暗舱色键 ${key}`);
   }
+  const baseEffort = {
+    effort_deck_top: '#F6F7FB', effort_deck_bottom: '#FFFFFF', effort_track: '#E6E9F2',
+    effort_bar_off: '#DFE3EC', effort_text_dim: '#6B7280', effort_text_bright: '#111827'
+  };
+  const darkEffort = {
+    effort_deck_top: '#11131B', effort_deck_bottom: '#181C28', effort_track: '#232836',
+    effort_bar_off: '#2A2F3D', effort_text_dim: '#9CA3AF', effort_text_bright: '#FFFFFF'
+  };
   const expect = (name, baseValue, darkValue) => {
     assert.equal(b[name], baseValue.toUpperCase(), `base ${name}`);
     assert.equal(d[name], darkValue.toUpperCase(), `dark ${name}`);
@@ -68,7 +76,10 @@ test('v3.5 色板：base/dark 各 54 键且键集合一致，品牌/气泡/页�
   expect('bg_page', '#FFFFFF', '#0E1014');
   expect('violet', '#7C3AED', '#8B5CF6');
   expect('pink', '#EC4899', '#F472B6');
-  console.log('  证据：54 键一致（含 violet/pink + 8 avatar_bg_* + 6 effort_*）；brand #2563EB/#4F83FF，bubble_user #111827/#2563EB，bg_page #FFFFFF/#0E1014');
+  for (const key of Object.keys(baseEffort)) {
+    expect(key, baseEffort[key], darkEffort[key]);
+  }
+  console.log('  证据：54 键一致（violet/pink + 8 avatar_bg_* + 6 effort_* 日夜两套精确值）；brand #2563EB/#4F83FF，bubble_user #111827/#2563EB，bg_page #FFFFFF/#0E1014');
 });
 
 // ---------------------------------------------------------------------------

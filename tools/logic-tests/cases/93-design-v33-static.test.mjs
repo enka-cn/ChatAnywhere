@@ -40,20 +40,14 @@ const chatFiles = walk(CHAT_ETS, /\.(ets|ts)$/);
 // ---------------------------------------------------------------------------
 // 1) 抽屉关闭：右空白可点容器（替代装饰 Blank） + 左滑手势 + scrim
 // ---------------------------------------------------------------------------
-test('抽屉零闪变：常驻挂载 + drawerVisible/Visibility + opacity/translate 表达式 + 240ms FastOutSlowIn + onFinish，无 if 卸载/TransitionEffect', () => {
+test('抽屉单一位移（v3.6）：drawerTranslateX 单状态 + scrimOpacity 同步 + clamp 跟手 + 从当前位移动画，无 drawerDragX/drawerOpen 状态', () => {
   const chatPage = read(path.join(CHAT_ETS, 'pages', 'ChatPage.ets'));
-  assert.ok(chatPage.includes('private setDrawerOpen('), '缺少 setDrawerOpen(open) 统一入口');
-  const fnStart = chatPage.indexOf('private setDrawerOpen(');
-  const fnBody = chatPage.slice(fnStart, fnStart + 1400);
-  assert.ok(/duration:\s*240/.test(fnBody), 'setDrawerOpen 未使用 240ms');
-  assert.ok(fnBody.includes('FastOutSlowIn'), 'setDrawerOpen 未使用 FastOutSlowIn 曲线');
-  assert.ok(fnBody.includes('onFinish'), '关闭未在 onFinish 里置 None（会导致闪变）');
-  assert.ok(fnBody.includes('drawerVisible = true') && fnBody.includes('drawerVisible = false'),
-    'setDrawerOpen 未管理 drawerVisible Visible/None');
-  assert.ok(fnBody.includes('drawerOpen = true') && fnBody.includes('drawerOpen = false'),
-    'setDrawerOpen 未设置 drawerOpen');
-  assert.equal(count(chatPage, /this\.drawerOpen = /g), 2, 'drawerOpen 赋值应仅在 setDrawerOpen 内（open/close 各一处）');
-  assert.ok(count(chatPage, /this\.setDrawerOpen\(/g) >= 9, 'setDrawerOpen 调用点少于 9 处');
+  assert.ok(chatPage.includes('@State private drawerTranslateX'), '缺少 drawerTranslateX 单一位移状态');
+  assert.ok(chatPage.includes('@State private scrimOpacity'), '缺少 scrimOpacity 遮罩同步状态');
+  assert.equal(count(chatPage, /drawerDragX/g), 0, 'v3.6 不应再有 drawerDragX');
+  assert.equal(count(chatPage, /drawerOpen/g), 0, 'v3.6 不应再有 drawerOpen 位移状态');
+  assert.ok(count(chatPage, /drawerTranslateX/g) >= 4, 'drawerTranslateX 出现次数 <4');
+  assert.ok(count(chatPage, /scrimOpacity/g) >= 2, 'scrimOpacity 出现次数 <2');
 
   const start = chatPage.indexOf('// 折叠态会话抽屉');
   assert.ok(start >= 0, 'ChatPage 缺少折叠态会话抽屉区块');
@@ -61,19 +55,28 @@ test('抽屉零闪变：常驻挂载 + drawerVisible/Visibility + opacity/transl
   assert.ok(end > start, '无法定位抽屉区块结束位置');
   const block = chatPage.slice(start, end);
   assert.ok(block.includes('drawerVisible'), '抽屉区块缺少 drawerVisible 常驻挂载');
-  assert.ok(block.includes('Visibility.None') && block.includes('Visibility.Visible'),
-    '抽屉区块缺少 Visibility 显隐控制');
-  assert.ok(/\.opacity\(this\.drawerOpen \? 1 : 0\)/.test(block), '遮罩缺少 opacity(drawerOpen?1:0) 渐变');
-  assert.ok(/\.translate\(\{\s*x:\s*\(this\.drawerOpen \? 0 : -Layout\.drawerMaxWidth\)/.test(block),
-    '抽屉层缺少 translate(drawerOpen?0:-drawerMaxWidth + dragX) 表达式');
+  assert.ok(block.includes('Visibility.None') && block.includes('Visibility.Visible'), '缺少 Visibility 显隐控制');
+  assert.ok(/\.opacity\(this\.scrimOpacity\)/.test(block), '遮罩缺少 opacity(scrimOpacity) 同步');
+  assert.ok(/\.translate\(\{\s*x:\s*this\.drawerTranslateX\s*\}\)/.test(block), '抽屉层缺少 translate(drawerTranslateX)');
+  assert.ok(/Math\.max\(-width,\s*Math\.min\(0,\s*e\.offsetX\)\)/.test(block), 'onActionUpdate 未 clamp 位移');
+  assert.ok(/this\.scrimOpacity = 1 \+ this\.drawerTranslateX \/ width/.test(block), '拖动未同步 scrimOpacity');
+  assert.ok(/this\.drawerTranslateX < -width \* 0\.25/.test(block), 'onActionEnd 未使用 1/4 位移阈值');
+  assert.ok(/velocityX < -800/.test(block), 'onActionEnd 未使用快速左滑速度阈值');
+  assert.ok(block.includes('onFinish'), '收起动画缺少 onFinish');
+  assert.equal(count(block, /TransitionEffect/g), 0, '抽屉区块不应有 TransitionEffect');
+  assert.ok(!/Blank\(\)/.test(block), '抽屉区块内出现装饰 Blank()');
   assert.ok(/\.layoutWeight\(1\)/.test(block), '右空白点击关闭容器丢失 layoutWeight(1)');
   assert.ok(block.includes('this.setDrawerOpen(false)'), '抽屉关闭未走 setDrawerOpen(false)');
-  assert.ok(!/Blank\(\)/.test(block), '抽屉区块内出现装饰 Blank()');
-  assert.equal(count(block, /TransitionEffect/g), 0, 'v3.5 抽屉区块不应再有 TransitionEffect（改为常驻挂载）');
-  assert.ok(!chatPage.includes('if (!this.unfolded && this.drawerOpen)'),
-    '仍存在 if (!this.unfolded && this.drawerOpen) 卸载（会闪变）');
-  assert.ok(block.includes('PanGesture') && block.includes('-48'), '抽屉左滑关闭手势/阈值丢失');
-  console.log('  证据：drawerVisible+Visibility 常驻挂载、opacity/translate 表达式、setDrawerOpen 240ms FastOutSlowIn+onFinish、无 if 卸载/TransitionEffect；关闭入口 ≥3、调用点 ≥9');
+
+  const fnStart = chatPage.indexOf('private setDrawerOpen(');
+  const fnBody = chatPage.slice(fnStart, fnStart + 1600);
+  assert.ok(/duration:\s*240/.test(fnBody), 'setDrawerOpen 未使用 240ms');
+  assert.ok(fnBody.includes('FastOutSlowIn'), 'setDrawerOpen 未使用 FastOutSlowIn');
+  assert.ok(fnBody.includes('onFinish'), '关闭未在 onFinish 里置 None');
+  assert.ok(fnBody.includes('drawerVisible = true') && fnBody.includes('drawerVisible = false'),
+    'setDrawerOpen 未管理 drawerVisible');
+  assert.ok(count(chatPage, /this\.setDrawerOpen\(/g) >= 8, 'setDrawerOpen 调用点少于 8 处');
+  console.log('  证据：drawerTranslateX 单一位移 + scrimOpacity 同步 + clamp 跟手 + 从当前位移收起（1/4 或 velocityX<-800）+ onFinish/Visibility；无 drawerDragX/drawerOpen');
 });
 
 // ---------------------------------------------------------------------------
@@ -151,10 +154,21 @@ test('基建：color.json base/dark 各 54 键且含 violet/pink 与 6 个 effor
     assert.ok(bk.includes(key), `base 缺少 ${key}`);
     assert.ok(dk.includes(key), `dark 缺少 ${key}`);
   }
-  for (const key of ['effort_deck_top', 'effort_deck_bottom', 'effort_track', 'effort_bar_off',
-    'effort_text_dim', 'effort_text_bright']) {
-    assert.ok(bk.includes(key), `base 缺少 v3.5 暗舱色键 ${key}`);
-    assert.ok(dk.includes(key), `dark 缺少 v3.5 暗舱色键 ${key}`);
+  const bv = Object.fromEntries(base.color.map((c) => [c.name, String(c.value).toUpperCase()]));
+  const dv = Object.fromEntries(dark.color.map((c) => [c.name, String(c.value).toUpperCase()]));
+  const baseEffort = {
+    effort_deck_top: '#F6F7FB', effort_deck_bottom: '#FFFFFF', effort_track: '#E6E9F2',
+    effort_bar_off: '#DFE3EC', effort_text_dim: '#6B7280', effort_text_bright: '#111827'
+  };
+  const darkEffort = {
+    effort_deck_top: '#11131B', effort_deck_bottom: '#181C28', effort_track: '#232836',
+    effort_bar_off: '#2A2F3D', effort_text_dim: '#9CA3AF', effort_text_bright: '#FFFFFF'
+  };
+  for (const key of Object.keys(baseEffort)) {
+    assert.ok(bk.includes(key), `base 缺少 v3.6 暗舱色键 ${key}`);
+    assert.ok(dk.includes(key), `dark 缺少 v3.6 暗舱色键 ${key}`);
+    assert.equal(bv[key], baseEffort[key], `base ${key}（日间浅面）`);
+    assert.equal(dv[key], darkEffort[key], `dark ${key}（夜间暗舱）`);
   }
   const baseViolet = base.color.find((c) => c.name === 'violet').value.toUpperCase();
   const darkViolet = dark.color.find((c) => c.name === 'violet').value.toUpperCase();

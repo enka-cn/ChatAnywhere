@@ -7,6 +7,7 @@
 import { ModelProfile, ThinkingLevel } from '@app/core_protocol';
 import { EffortLevels } from '../app/EffortLevels';
 import { Icons, Layout, Theme } from '../app/Theme';
+import { IconBtn } from './IconBtn';
 import { ReasoningEffortPanel } from './ReasoningEffortPanel';
 
 /** 厂商短名（半模态列表右侧的灰色说明）。 */
@@ -84,11 +85,26 @@ export struct ModelCapsule {
   @Builder
   sheetContent() {
     Column({ space: Layout.s4 }) {
-      Text('模型与思考')
-        .fontSize(Layout.fontHeadline)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(Theme.textPrimary)
-        .width('100%')
+      Row({ space: Layout.s2 }) {
+        Text('模型与思考')
+          .fontSize(Layout.fontHeadline)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(Theme.textPrimary)
+          .layoutWeight(1)
+        IconBtn({
+          icon: Icons.close,
+          iconSize: 14,
+          iconColor: Theme.iconSecondary,
+          btnSize: 28,
+          bgColor: Theme.bgSurface3,
+          radius: Layout.radiusPill,
+          onTap: () => {
+            this.showSheet = false;
+          }
+        })
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
 
       if (this.profiles.length === 0) {
         this.goSettingsRow()
@@ -189,7 +205,7 @@ export struct ModelCapsule {
     .bindSheet($$this.showSheet, this.sheetContent(), {
       height: SheetSize.MEDIUM,
       preferType: SheetType.BOTTOM,
-      showClose: true,
+      showClose: false,
       dragBar: true,
       backgroundColor: Theme.sheetBg,
       radius: { topLeft: Layout.sheetTopRadius, topRight: Layout.sheetTopRadius }

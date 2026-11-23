@@ -201,11 +201,23 @@ test('资源：base/dark color.json 键集合一致（v3.5 各 54 键）', () =>
   assert.equal(avatarTones.length, 8, `avatar_bg_* 数量 ${avatarTones.length} ≠ 8`);
   const effortKeys = ['effort_deck_top', 'effort_deck_bottom', 'effort_track', 'effort_bar_off',
     'effort_text_dim', 'effort_text_bright'];
+  const bv = Object.fromEntries(base.color.map((c) => [c.name, String(c.value).toUpperCase()]));
+  const dv = Object.fromEntries(dark.color.map((c) => [c.name, String(c.value).toUpperCase()]));
+  const baseEffort = {
+    effort_deck_top: '#F6F7FB', effort_deck_bottom: '#FFFFFF', effort_track: '#E6E9F2',
+    effort_bar_off: '#DFE3EC', effort_text_dim: '#6B7280', effort_text_bright: '#111827'
+  };
+  const darkEffort = {
+    effort_deck_top: '#11131B', effort_deck_bottom: '#181C28', effort_track: '#232836',
+    effort_bar_off: '#2A2F3D', effort_text_dim: '#9CA3AF', effort_text_bright: '#FFFFFF'
+  };
   for (const key of effortKeys) {
-    assert.ok(bk.includes(key), `base 缺少 v3.5 暗舱色键 ${key}`);
-    assert.ok(dk.includes(key), `dark 缺少 v3.5 暗舱色键 ${key}`);
+    assert.ok(bk.includes(key), `base 缺少 v3.6 暗舱色键 ${key}`);
+    assert.ok(dk.includes(key), `dark 缺少 v3.6 暗舱色键 ${key}`);
+    assert.equal(bv[key], baseEffort[key], `base ${key}（日间浅面）`);
+    assert.equal(dv[key], darkEffort[key], `dark ${key}（夜间暗舱）`);
   }
-  console.log(`  证据：base=${bk.length} 键 / dark=${dk.length} 键，集合完全一致（含 violet/pink + 8 avatar_bg_* + 6 effort_*）`);
+  console.log(`  证据：base=${bk.length} 键 / dark=${dk.length} 键，集合完全一致（violet/pink + 8 avatar_bg_* + 6 effort_* 日夜两套精确值）`);
 });
 
 // ---------------------------------------------------------------------------

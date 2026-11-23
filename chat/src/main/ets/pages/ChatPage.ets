@@ -188,11 +188,12 @@ struct ChatPage {
   // 响应式布局
   @State private unfolded: boolean = false;
   @State private sidebarCollapsed: boolean = false;
-  @State private drawerOpen: boolean = false;
   /** 抽屉节点是否常驻可见（退场动画结束后才置 false，避免 if 卸载闪变）。 */
   @State private drawerVisible: boolean = false;
-  /** 折叠抽屉左滑关闭的实时位移（<=0，松手归零）。 */
-  @State private drawerDragX: number = 0;
+  /** 抽屉层唯一横向位移：-W（收起）…0（展开）；拖动时直接把 offsetX 写进来。 */
+  @State private drawerTranslateX: number = -Layout.drawerMaxWidth;
+  /** 遮罩透明度：与位移同步（1 → 0），拖动时不包动画直接跟手。 */
+  @State private scrimOpacity: number = 0;
   @State private sourcePaneOpen: boolean = false;
   @State private sourceNodeId: string = '';
 
@@ -496,30 +497,32 @@ struct ChatPage {
   // -------------------------------------------------------------------------
 
   /**
-   * 折叠抽屉开关（统一入口；GPU 常驻挂载 + 240ms 进出场，关闭零闪变）。
+   * 折叠抽屉开关（统一入口；GPU 常驻挂载 + 240ms 进出场）。
    *
-   * 打开：先 Visible，再 animateTo 拉开；
-   * 关闭：animateTo 收起的 onFinish 里才置 None，组件树全程不卸载。
+   * 所有位移只读写 `drawerTranslateX` 一个状态，`scrimOpacity` 与其同步；
+   * 关闭动画结束后才 `drawerVisible=false`，组件树全程不卸载，且拖动回弹不会跳变。
    */
   private setDrawerOpen(open: boolean): void {
     if (open) {
-      this.drawerDragX = 0;
       this.drawerVisible = true;
       this.getUIContext().animateTo({ duration: 240, curve: Curve.FastOutSlowIn }, () => {
-        this.drawerOpen = true;
+        this.drawerTranslateX = 0;
+        this.scrimOpacity = 1;
       });
       return;
     }
+    const width: number = Layout.drawerMaxWidth;
     this.getUIContext().animateTo({
       duration: 240,
       curve: Curve.FastOutSlowIn,
       onFinish: () => {
-        if (!this.drawerOpen) {
+        if (this.drawerTranslateX <= -width * 0.999) {
           this.drawerVisible = false;
         }
       }
     }, () => {
-      this.drawerOpen = false;
+      this.drawerTranslateX = -width;
+      this.scrimOpacity = 0;
     });
   }
 
@@ -1537,49 +1540,69 @@ struct ChatPage {
 
   @Builder
   sheetContent() {
-    if (this.sheetMode === SHEET_PERSONA) {
-      PersonaSheet({
-        personas: this.personas,
-        activeId: this.activePersonaId,
-        onPick: (personaId: string) => {
-          this.pickPersona(personaId);
-        },
-        onOpenSettings: () => {
-          this.goPersonaSettings();
-        }
-      })
-    } else if (this.sheetMode === SHEET_ATTACH) {
-      AttachSheet({
-        onPickImage: () => {
-          this.pickImages();
-        },
-        onPickFile: () => {
-          this.pickFiles();
-        },
-        onPickLink: (url: string) => {
-          this.addAttachment(url, 'link');
+    Stack({ alignContent: Alignment.TopEnd }) {
+      if (this.sheetMode === SHEET_PERSONA) {
+        PersonaSheet({
+          personas: this.personas,
+          activeId: this.activePersonaId,
+          onPick: (personaId: string) => {
+            this.pickPersona(personaId);
+          },
+          onOpenSettings: () => {
+            this.goPersonaSettings();
+          }
+        })
+      } else if (this.sheetMode === SHEET_ATTACH) {
+        AttachSheet({
+          onPickImage: () => {
+            this.pickImages();
+          },
+          onPickFile: () => {
+            this.pickFiles();
+          },
+          onPickLink: (url: string) => {
+            this.addAttachment(url, 'link');
+            this.sheetOpen = false;
+          }
+        })
+      } else if (this.sheetMode === SHEET_SKILLS) {
+        this.skillSheetContent()
+      } else if (this.sheetMode === SHEET_SOURCES) {
+        SourcePane({
+          sources: this.currentSources(),
+          showClose: false,
+          onClose: () => {
+          }
+        })
+      } else {
+        BranchSelector({
+          options: this.branchOptions,
+          onPick: (childId: string) => {
+            this.sheetOpen = false;
+            this.runtime.switchBranch(this.branchParentId, childId);
+            this.branchSignature = '';
+          }
+        })
+      }
+      // 统一自定义关闭按钮（与各内容标题行垂直居中；系统关闭按钮已 showClose:false）
+      IconBtn({
+        icon: Icons.close,
+        iconSize: 14,
+        iconColor: Theme.iconSecondary,
+        btnSize: 28,
+        bgColor: Theme.bgSurface3,
+        radius: Layout.radiusPill,
+        onTap: () => {
           this.sheetOpen = false;
         }
       })
-    } else if (this.sheetMode === SHEET_SKILLS) {
-      this.skillSheetContent()
-    } else if (this.sheetMode === SHEET_SOURCES) {
-      SourcePane({
-        sources: this.currentSources(),
-        showClose: false,
-        onClose: () => {
-        }
-      })
-    } else {
-      BranchSelector({
-        options: this.branchOptions,
-        onPick: (childId: string) => {
-          this.sheetOpen = false;
-          this.runtime.switchBranch(this.branchParentId, childId);
-          this.branchSignature = '';
-        }
-      })
+        .margin({
+          top: this.sheetMode === SHEET_SOURCES ? Layout.s2 : Layout.s5,
+          right: Layout.s3
+        })
     }
+    .width('100%')
+    .height('100%')
   }
 
   // -------------------------------------------------------------------------
@@ -1798,18 +1821,18 @@ struct ChatPage {
       .height('100%')
       .backgroundColor(Theme.bgPage)
 
-      // 折叠态会话抽屉：常驻挂载（GPU 层动画，不做 if 卸载，关闭零闪变）。
-      // ① 遮罩：opacity 0→1；不可见时 visibility None 不拦截事件。
+      // 折叠态会话抽屉：常驻挂载（GPU 层动画，不做 if 卸载，拖动/关闭零闪变）。
+      // ① 遮罩：opacity 与位移同步（拖动 1:1 跟手，不走动画）。
       Column()
         .width('100%')
         .height('100%')
         .backgroundColor(Theme.scrim)
-        .opacity(this.drawerOpen ? 1 : 0)
+        .opacity(this.scrimOpacity)
         .visibility(this.drawerVisible ? Visibility.Visible : Visibility.None)
         .onClick(() => {
           this.setDrawerOpen(false);
         })
-      // ② 抽屉层：translate 跟随 drawerOpen/drawerDragX；右空白点击关闭 + 左滑 48vp 关闭。
+      // ② 抽屉层：位移只读写 drawerTranslateX；右空白点击关闭 + 左滑 48vp 关闭。
       Row() {
         Column() {
           this.drawerForFolded()
@@ -1826,18 +1849,31 @@ struct ChatPage {
       }
       .width('100%')
       .height('100%')
-      .translate({ x: (this.drawerOpen ? 0 : -Layout.drawerMaxWidth) + this.drawerDragX })
+      .translate({ x: this.drawerTranslateX })
       .visibility(this.drawerVisible ? Visibility.Visible : Visibility.None)
       .gesture(PanGesture({ direction: PanDirection.Left, distance: 8 })
         .onActionUpdate((e: GestureEvent) => {
-          this.drawerDragX = Math.min(0, e.offsetX);
+          const width: number = Layout.drawerMaxWidth;
+          this.drawerTranslateX = Math.max(-width, Math.min(0, e.offsetX));
+          this.scrimOpacity = 1 + this.drawerTranslateX / width;
         })
         .onActionEnd((e: GestureEvent) => {
-          const shouldClose: boolean = e.offsetX < -48;
-          this.drawerDragX = 0;
-          if (shouldClose) {
-            this.setDrawerOpen(false);
-          }
+          // 从当前位移继续动画（禁止先归零），位移过 1/4 或快速左滑则收起。
+          const width: number = Layout.drawerMaxWidth;
+          const fastSwipe: boolean = e.velocityX < -800;
+          const close: boolean = this.drawerTranslateX < -width * 0.25 || fastSwipe;
+          this.getUIContext().animateTo({
+            duration: close ? 240 : 180,
+            curve: close ? Curve.FastOutSlowIn : Curve.EaseOut,
+            onFinish: () => {
+              if (close && this.drawerTranslateX <= -width * 0.999) {
+                this.drawerVisible = false;
+              }
+            }
+          }, () => {
+            this.drawerTranslateX = close ? -width : 0;
+            this.scrimOpacity = close ? 0 : 1;
+          });
         }))
     }
     .width('100%')
@@ -1846,7 +1882,7 @@ struct ChatPage {
     .bindSheet($$this.sheetOpen, this.sheetContent(), {
       height: SheetSize.MEDIUM,
       preferType: SheetType.BOTTOM,
-      showClose: true,
+      showClose: false,
       dragBar: true,
       backgroundColor: Theme.sheetBg,
       radius: { topLeft: Layout.sheetTopRadius, topRight: Layout.sheetTopRadius },

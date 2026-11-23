@@ -171,19 +171,30 @@ test('角色二级列表与头像：PersonaProfile 含 avatarIcon/avatarTone，P
   console.log('  证据：PersonaProfile avatarIcon/avatarTone + sanitize 兼容；PersonaAvatars 10×8 + iconOf/toneOf；角色二级切换完整');
 });
 
-test('头像配色资源：base/dark 各 54 键且含 8 个 avatar_bg_*、violet/pink 与 6 个 effort_*，深浅色一致', () => {
+test('头像配色资源：base/dark 各 54 键且含 8 个 avatar_bg_*、violet/pink 与 6 个 effort_*（日夜两套精确值），深浅色一致', () => {
   const load = (mode) => JSON.parse(read(path.join(RES, mode, 'element', 'color.json')));
   const bk = load('base').color.map((c) => c.name);
   const dk = load('dark').color.map((c) => c.name);
-  assert.equal(bk.length, 54, `base 颜色键 ${bk.length} ≠ 54（v3.5：48 + 6 effort_*）`);
+  assert.equal(bk.length, 54, `base 颜色键 ${bk.length} ≠ 54（v3.6：48 + 6 effort_*）`);
   assert.deepEqual([...bk].sort(), [...dk].sort(), '深浅色键集合不一致');
   assert.equal(bk.filter((n) => n.startsWith('avatar_bg_')).length, 8, 'avatar_bg_* 不是 8 个');
   assert.ok(bk.includes('violet') && bk.includes('pink'), '缺少 violet/pink 色键');
-  for (const key of ['effort_deck_top', 'effort_deck_bottom', 'effort_track', 'effort_bar_off',
-    'effort_text_dim', 'effort_text_bright']) {
-    assert.ok(bk.includes(key), `缺少 v3.5 暗舱色键 ${key}`);
+  const bv = Object.fromEntries(load('base').color.map((c) => [c.name, String(c.value).toUpperCase()]));
+  const dv = Object.fromEntries(load('dark').color.map((c) => [c.name, String(c.value).toUpperCase()]));
+  const baseEffort = {
+    effort_deck_top: '#F6F7FB', effort_deck_bottom: '#FFFFFF', effort_track: '#E6E9F2',
+    effort_bar_off: '#DFE3EC', effort_text_dim: '#6B7280', effort_text_bright: '#111827'
+  };
+  const darkEffort = {
+    effort_deck_top: '#11131B', effort_deck_bottom: '#181C28', effort_track: '#232836',
+    effort_bar_off: '#2A2F3D', effort_text_dim: '#9CA3AF', effort_text_bright: '#FFFFFF'
+  };
+  for (const key of Object.keys(baseEffort)) {
+    assert.ok(bk.includes(key), `缺少 v3.6 暗舱色键 ${key}`);
+    assert.equal(bv[key], baseEffort[key], `base ${key}（日间浅面）`);
+    assert.equal(dv[key], darkEffort[key], `dark ${key}（夜间暗舱）`);
   }
-  console.log('  证据：54 键（48 + 6 effort_*）base/dark 一致');
+  console.log('  证据：54 键（48 + 6 effort_* 日夜两套精确值）base/dark 一致');
 });
 
 // ---------------------------------------------------------------------------

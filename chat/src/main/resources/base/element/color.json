@@ -194,27 +194,27 @@
     },
     {
       "name": "effort_deck_top",
-      "value": "#11131B"
+      "value": "#F6F7FB"
     },
     {
       "name": "effort_deck_bottom",
-      "value": "#181C28"
+      "value": "#FFFFFF"
     },
     {
       "name": "effort_track",
-      "value": "#232836"
+      "value": "#E6E9F2"
     },
     {
       "name": "effort_bar_off",
-      "value": "#2A2F3D"
+      "value": "#DFE3EC"
     },
     {
       "name": "effort_text_dim",
-      "value": "#9CA3AF"
+      "value": "#6B7280"
     },
     {
       "name": "effort_text_bright",
-      "value": "#FFFFFF"
+      "value": "#111827"
     }
   ]
 }

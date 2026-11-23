@@ -41,36 +41,40 @@ const count = (text, re) => (text.match(re) || []).length;
 // ---------------------------------------------------------------------------
 // 1) 抽屉退场动画
 // ---------------------------------------------------------------------------
-test('抽屉零闪变（v3.5）：常驻挂载 drawerVisible/Visibility + opacity/translate 表达式 + 240ms FastOutSlowIn + onFinish，无 if 卸载/TransitionEffect', () => {
+test('抽屉单一位移（v3.6）：drawerTranslateX/scrimOpacity + clamp 跟手 + 从当前位移动画 + 240ms/onFinish，无 drawerDragX/drawerOpen', () => {
   const chatPage = read(path.join(CHAT_ETS, 'pages', 'ChatPage.ets'));
-  assert.ok(chatPage.includes('private setDrawerOpen('), '缺少 setDrawerOpen(open) 统一入口');
-  const fnStart = chatPage.indexOf('private setDrawerOpen(');
-  const fnBody = chatPage.slice(fnStart, fnStart + 1400);
-  assert.ok(/duration:\s*240/.test(fnBody), 'setDrawerOpen 未使用 240ms');
-  assert.ok(fnBody.includes('FastOutSlowIn'), 'setDrawerOpen 未使用 FastOutSlowIn 曲线');
-  assert.ok(fnBody.includes('onFinish'), '关闭未在 onFinish 里置 None（闪变根因）');
-  assert.ok(fnBody.includes('drawerVisible = true') && fnBody.includes('drawerVisible = false'),
-    'setDrawerOpen 未管理 drawerVisible Visible/None');
-  assert.equal(count(chatPage, /this\.drawerOpen = /g), 2, 'drawerOpen 赋值应仅在 setDrawerOpen 内（open/close）');
-  assert.ok(count(chatPage, /this\.setDrawerOpen\(/g) >= 9, 'setDrawerOpen 调用点少于 9 处');
+  assert.ok(chatPage.includes('@State private drawerTranslateX'), '缺少 drawerTranslateX');
+  assert.ok(chatPage.includes('@State private scrimOpacity'), '缺少 scrimOpacity');
+  assert.equal(count(chatPage, /drawerDragX/g), 0, 'v3.6 不应再有 drawerDragX');
+  assert.equal(count(chatPage, /drawerOpen/g), 0, 'v3.6 不应再有 drawerOpen 位移状态');
+  assert.ok(count(chatPage, /drawerTranslateX/g) >= 4, 'drawerTranslateX 出现次数 <4');
+  assert.ok(count(chatPage, /scrimOpacity/g) >= 2, 'scrimOpacity 出现次数 <2');
 
-  // 常驻挂载区块
   const start = chatPage.indexOf('// 折叠态会话抽屉');
   assert.ok(start >= 0, '缺少折叠态抽屉区块');
   const end = chatPage.indexOf('.bindSheet(', start);
   const block = chatPage.slice(start, end);
   assert.ok(block.includes('drawerVisible'), '抽屉区块缺少 drawerVisible');
-  assert.ok(block.includes('Visibility.None') && block.includes('Visibility.Visible'), '缺少 Visibility 显隐控制');
-  assert.ok(/\.opacity\(this\.drawerOpen \? 1 : 0\)/.test(block), '遮罩缺少 opacity(drawerOpen?1:0)');
-  assert.ok(/\.translate\(\{\s*x:\s*\(this\.drawerOpen \? 0 : -Layout\.drawerMaxWidth\)/.test(block),
-    '抽屉层缺少 translate(drawerOpen?0:-drawerMaxWidth + dragX)');
+  assert.ok(block.includes('Visibility.None') && block.includes('Visibility.Visible'), '缺少 Visibility');
+  assert.ok(/\.opacity\(this\.scrimOpacity\)/.test(block), '遮罩缺少 opacity(scrimOpacity)');
+  assert.ok(/\.translate\(\{\s*x:\s*this\.drawerTranslateX\s*\}\)/.test(block), '抽屉层缺少 translate(drawerTranslateX)');
+  assert.ok(/Math\.max\(-width,\s*Math\.min\(0,\s*e\.offsetX\)\)/.test(block), 'onActionUpdate 未 clamp');
+  assert.ok(/this\.scrimOpacity = 1 \+ this\.drawerTranslateX \/ width/.test(block), '拖动未同步 scrimOpacity');
+  assert.ok(/this\.drawerTranslateX < -width \* 0\.25/.test(block), 'onActionEnd 未使用 1/4 阈值');
+  assert.ok(/velocityX < -800/.test(block), 'onActionEnd 未使用速度阈值');
+  assert.ok(block.includes('onFinish'), '收起动画缺少 onFinish');
+  assert.equal(count(block, /TransitionEffect/g), 0, '抽屉区块不应有 TransitionEffect');
+  assert.ok(!/Blank\(\)/.test(block), '抽屉区块内出现装饰 Blank()');
   assert.ok(/\.layoutWeight\(1\)/.test(block), '右空白点击关闭容器丢失 layoutWeight(1)');
   assert.ok(block.includes('this.setDrawerOpen(false)'), '抽屉关闭未走 setDrawerOpen(false)');
-  assert.ok(!/Blank\(\)/.test(block), '抽屉区块内出现装饰 Blank()');
-  assert.equal(count(block, /TransitionEffect/g), 0, 'v3.5 抽屉区块不应再有 TransitionEffect');
-  assert.ok(!chatPage.includes('if (!this.unfolded && this.drawerOpen)'), '仍存在 if 卸载（会闪变）');
-  assert.ok(block.includes('PanGesture') && block.includes('-48'), '左滑关闭手势/阈值丢失');
-  console.log('  证据：常驻挂载 drawerVisible+Visibility、opacity/translate 表达式、240ms FastOutSlowIn+onFinish、无 if 卸载/TransitionEffect');
+
+  const fnStart = chatPage.indexOf('private setDrawerOpen(');
+  const fnBody = chatPage.slice(fnStart, fnStart + 1600);
+  assert.ok(/duration:\s*240/.test(fnBody), 'setDrawerOpen 未使用 240ms');
+  assert.ok(fnBody.includes('FastOutSlowIn'), 'setDrawerOpen 未使用 FastOutSlowIn');
+  assert.ok(fnBody.includes('onFinish'), '关闭未在 onFinish 置 None');
+  assert.ok(count(chatPage, /this\.setDrawerOpen\(/g) >= 8, 'setDrawerOpen 调用点少于 8 处');
+  console.log('  证据：drawerTranslateX 单一位移 + scrimOpacity 同步 + clamp 跟手 + 从当前位移收起（1/4 或 velocityX<-800）+ onFinish/Visibility；无 drawerDragX/drawerOpen');
 });
 
 // ---------------------------------------------------------------------------
@@ -141,7 +145,7 @@ test('取消链路：SettingsModelsView 含 toggleModel + unregister + clearActi
 // ---------------------------------------------------------------------------
 // 4) 契约：unregister / clearActiveProfile / 颜色不变
 // ---------------------------------------------------------------------------
-test('契约：ModelCatalogApi/ModelCatalog 有 unregister，AppServices 有 clearActiveProfile，颜色仍 54 键（v3.5）', () => {
+test('契约：ModelCatalogApi/ModelCatalog 有 unregister，AppServices 有 clearActiveProfile，颜色仍 54 键（v3.6 日夜两套精确值）', () => {
   const proto = read(path.join(PKG, 'core_protocol', 'src', 'main', 'ets', 'interfaces', 'ProtocolLayer.ets'));
   assert.ok(/unregister\(\s*providerId:\s*string,\s*modelId:\s*string\s*\)/.test(proto),
     'ModelCatalogApi 缺少 unregister(providerId, modelId)');
@@ -153,13 +157,24 @@ test('契约：ModelCatalogApi/ModelCatalog 有 unregister，AppServices 有 cle
   const load = (mode) => JSON.parse(read(path.join(RES, mode, 'element', 'color.json')));
   const bk = load('base').color.map((c) => c.name);
   const dk = load('dark').color.map((c) => c.name);
-  assert.equal(bk.length, 54, `颜色键 ${bk.length} ≠ 54（v3.5：48 + 6 effort_*）`);
+  assert.equal(bk.length, 54, `颜色键 ${bk.length} ≠ 54（v3.6：48 + 6 effort_*）`);
   assert.deepEqual([...bk].sort(), [...dk].sort(), '深浅色键集合不一致');
-  for (const key of ['effort_deck_top', 'effort_deck_bottom', 'effort_track', 'effort_bar_off',
-    'effort_text_dim', 'effort_text_bright']) {
-    assert.ok(bk.includes(key), `缺少 v3.5 暗舱色键 ${key}`);
+  const bv = Object.fromEntries(load('base').color.map((c) => [c.name, String(c.value).toUpperCase()]));
+  const dv = Object.fromEntries(load('dark').color.map((c) => [c.name, String(c.value).toUpperCase()]));
+  const baseEffort = {
+    effort_deck_top: '#F6F7FB', effort_deck_bottom: '#FFFFFF', effort_track: '#E6E9F2',
+    effort_bar_off: '#DFE3EC', effort_text_dim: '#6B7280', effort_text_bright: '#111827'
+  };
+  const darkEffort = {
+    effort_deck_top: '#11131B', effort_deck_bottom: '#181C28', effort_track: '#232836',
+    effort_bar_off: '#2A2F3D', effort_text_dim: '#9CA3AF', effort_text_bright: '#FFFFFF'
+  };
+  for (const key of Object.keys(baseEffort)) {
+    assert.ok(bk.includes(key), `缺少 v3.6 暗舱色键 ${key}`);
+    assert.equal(bv[key], baseEffort[key], `base ${key}（日间浅面）`);
+    assert.equal(dv[key], darkEffort[key], `dark ${key}（夜间暗舱）`);
   }
-  console.log('  证据：unregister 契约+实现、clearActiveProfile 存在；颜色 54 键（含 6 effort_*）一致');
+  console.log('  证据：unregister 契约+实现、clearActiveProfile 存在；颜色 54 键（6 effort_* 日夜两套精确值）一致');
 });
 
 test('纪律：v3.4 面板与胶囊无新增硬编码色值/教学文案（含全仓扫描）', () => {

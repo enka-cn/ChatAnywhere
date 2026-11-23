@@ -1,16 +1,16 @@
 /**
- * Codex 风格「思考强度」面板（v3.5 · 深空暗舱版）。
+ * Codex 风格「思考强度」面板（v3.6 · 日夜双主题）。
  *
- * 真机反馈修复：
- * - 统一深空暗面（effortDeckTop → effortDeckBottom 竖向渐变，圆角 20，随档位微亮细边）；
- * - 删除顶部硬切色块，改为右上角 radialGradient 柔和氛围光（0.12–0.28 随档位，off 近 0）；
- * - 右上 6 格阶梯能量柱：暗底未亮 effortBarOff / 亮格 accent，xHigh 全亮微光；
- * - 手写能量槽：8vp 轨道 effortTrack + 渐变光轨 + 6 枚对齐刻度微点；
- *   22vp 纯白圆钮 + 中心 8vp 档位色圆点 + 柔和外发光（off 无光晕）；
+ * 日间：清透浅面（effortDeckTop→DeckBottom 浅色渐变）+ 轻光晕 + 深色文字，与白底半模态浑然一体；
+ * 夜间：深空暗舱（同一套 Theme 令牌自动切到暗色值）+ 霓虹氛围光 + 档位边。
+ * - 顶部：图标 + dim 小字 + 亮色大号档位字（弹跳）+ 右上 6 格阶梯能量柱；
+ * - 手写能量槽：8vp 轨道 + 渐变光轨 + 22vp 白钮（日间带描边可见）+ 8vp 档位色内点 + 外发光；
+ * - 移除轨道上方独立小圆点，仅保留底槽/光轨/白钮/底部刻度；
  * - 触感统一走 HapticUtil（设置总开关关闭即静音）。
  *
  * 颜色全部来自 Theme（禁止 hex），尺寸来自 Layout。
  */
+import mediaquery from '@ohos.mediaquery';
 import { ThinkingLevel } from '@app/core_protocol';
 import { EffortLevels, EffortOption } from '../app/EffortLevels';
 import { HapticUtil } from '../app/HapticUtil';
@@ -39,20 +39,47 @@ export struct ReasoningEffortPanel {
   @State private previewIndex: number = -1;
   /** 能量槽实测宽度（vp）。 */
   @State private trackWidth: number = 0;
+  /** 当前系统是否深色模式（决定光晕强度与描边策略）。 */
+  @State private isDark: boolean = false;
 
   private bounceTimer: number = -1;
   private lastVibrated: number = -1;
   private lastCommitted: number = -1;
+  private darkListener: mediaquery.MediaQueryListener | null = null;
+  private darkCallback: ((result: mediaquery.MediaQueryResult) => void) | null = null;
 
   aboutToAppear(): void {
     this.lastVibrated = this.index();
     this.lastCommitted = this.index();
+    this.watchColorMode();
   }
 
   aboutToDisappear(): void {
     if (this.bounceTimer >= 0) {
       clearTimeout(this.bounceTimer);
       this.bounceTimer = -1;
+    }
+    if (this.darkListener !== null && this.darkCallback !== null) {
+      this.darkListener.off('change', this.darkCallback);
+      this.darkListener = null;
+      this.darkCallback = null;
+    }
+  }
+
+  /** 监听系统深浅色（等价 mediaquery.matchMediaSync('(dark-mode: true)')）。 */
+  private watchColorMode(): void {
+    try {
+      const listener: mediaquery.MediaQueryListener =
+        this.getUIContext().getMediaQuery().matchMediaSync('(dark-mode: true)');
+      this.darkListener = listener;
+      this.isDark = listener.matches;
+      const callback = (result: mediaquery.MediaQueryResult): void => {
+        this.isDark = result.matches;
+      };
+      this.darkCallback = callback;
+      listener.on('change', callback);
+    } catch (e) {
+      this.isDark = false;
     }
   }
 
@@ -88,8 +115,11 @@ export struct ReasoningEffortPanel {
     return Theme.brand;
   }
 
-  /** 1vp 细边：off 常规边框，high 紫，xHigh 粉。 */
+  /** 1vp 细边：日间统一 Theme.border；夜间 off border / high 紫 / xHigh 粉。 */
   private edgeColor(): ResourceColor {
+    if (!this.isDark) {
+      return Theme.border;
+    }
     const idx: number = this.activeIndex();
     if (idx >= 5) {
       return Theme.pink;
@@ -122,25 +152,40 @@ export struct ReasoningEffortPanel {
     return center;
   }
 
-  /** 氛围光透明度：off 近 0，档位越高越亮（0.12–0.28）。 */
+  /** 氛围光透明度：日间 0.08–0.14、夜间 0.12–0.28（随档递增，off 最低）。 */
   private auraAlpha(): number {
     const idx: number = this.activeIndex();
     if (idx <= 0) {
       return 0.02;
     }
+    if (this.isDark) {
+      if (idx === 1) {
+        return 0.12;
+      }
+      if (idx === 2) {
+        return 0.16;
+      }
+      if (idx === 3) {
+        return 0.20;
+      }
+      if (idx === 4) {
+        return 0.24;
+      }
+      return 0.28;
+    }
     if (idx === 1) {
-      return 0.12;
+      return 0.08;
     }
     if (idx === 2) {
-      return 0.16;
+      return 0.09;
     }
     if (idx === 3) {
-      return 0.20;
+      return 0.10;
     }
     if (idx === 4) {
-      return 0.24;
+      return 0.12;
     }
-    return 0.28;
+    return 0.14;
   }
 
   /** 能量柱亮格数：off=0、min..high=index、xHigh 全亮 6 格。 */
@@ -334,21 +379,7 @@ export struct ReasoningEffortPanel {
     .alignItems(VerticalAlign.Center)
   }
 
-  /** 6 枚对齐刻度微点（均分在轨道上）。 */
-  @Builder
-  tickDots() {
-    ForEach(EffortLevels.ALL, (option: EffortOption, index: number) => {
-      Circle({ width: 3, height: 3 })
-        .fill(index <= this.activeIndex() ? Theme.effortTextBright : Theme.effortBarOff)
-        .opacity(index <= this.activeIndex() ? 0.75 : 0.6)
-        .position({
-          x: TRACK_PAD + this.usableWidth() * (index / (EffortLevels.ALL.length - 1)) - 1.5,
-          y: (TRACK_HEIGHT - 3) / 2
-        })
-    }, (option: EffortOption) => `dot_${option.level}`)
-  }
-
-  /** 手写能量槽：底槽 + 渐变光轨 + 刻度微点 + 白钮/档位色圆点/外发光。 */
+  /** 手写能量槽：底槽 + 渐变光轨 + 白钮/档位色圆点/外发光（不再有独立刻度圆点）。 */
   @Builder
   energyTrough() {
     Stack({ alignContent: Alignment.Start }) {
@@ -366,19 +397,19 @@ export struct ReasoningEffortPanel {
         .borderRadius(Layout.radiusPill)
         .linearGradient({ angle: 90, colors: this.fillColors() })
         .position({ x: 0, y: (TRACK_BOX_HEIGHT - TRACK_HEIGHT) / 2 })
-      // 刻度微点
-      this.tickDots()
-      // 外发光（off 无光晕）
+      // 外发光（off 无光晕；日间更淡）
       Circle({ width: KNOB_SIZE + 12, height: KNOB_SIZE + 12 })
         .fill(this.accent())
-        .opacity(this.activeIndex() <= 0 ? 0 : 0.26)
+        .opacity(this.activeIndex() <= 0 ? 0 : (this.isDark ? 0.26 : 0.18))
         .position({
           x: this.knobCenterX() - (KNOB_SIZE + 12) / 2,
           y: (TRACK_BOX_HEIGHT - KNOB_SIZE - 12) / 2
         })
-      // 22vp 纯白圆钮
+      // 22vp 白钮：夜间纯白，日间白底 + 细描边保证可见
       Circle({ width: KNOB_SIZE, height: KNOB_SIZE })
-        .fill(Theme.effortTextBright)
+        .fill(this.isDark ? Theme.effortTextBright : Theme.bgSurface)
+        .stroke(this.isDark ? Theme.bgSurface : Theme.border)
+        .strokeWidth(1)
         .position({ x: this.knobCenterX() - KNOB_SIZE / 2, y: (TRACK_BOX_HEIGHT - KNOB_SIZE) / 2 })
       // 中心 8vp 档位色圆点
       Circle({ width: 8, height: 8 })

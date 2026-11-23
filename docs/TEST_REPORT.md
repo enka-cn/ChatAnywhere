@@ -1117,3 +1117,113 @@ warnings 仍为 `ArkTS:WARN Function may throw exceptions.`（平台 API 建议�
 - **契约**：`SettingsKeys.HAPTIC_ENABLED` / `HapticUtil` / `AppServices.doInit` 已登记；`ChatRuntimeApi`/`ChatRuntime` 未动；main_pages 4 页；颜色 54 键。
 - **缺陷**：本轮**未发现需要修复的缺陷**。
 - **残余**：真机零闪变/曲线/暗舱对比度/滑条手感/震动开关实测仍需按 §18.7 冒烟；无真机前不得宣布 v3.5 交互修复闭环达成。
+
+---
+
+## 19. v3.6 交互修复验收（抽屉单一位移 / 面板日夜双主题 / 弹窗关闭按钮）
+
+> 验收人：`qa-verify`；数据快照：构建 2026-11-23 11:51:47–11:52:36；用例 2026-11-23 11:51:39（Asia/Shanghai）。
+> 范围（task-36/37/38）：① 抽屉拖动松手回跳 → 单一位移 `drawerTranslateX` + 从当前位移动画；② 6 档面板只有暗舱、日间对比度差 → 日夜双主题自动切换 + 删除浮点刻度；③ bindSheet 系统关闭按钮位置不统一 → `showClose:false` + 统一 `IconBtn(Icons.close, btnSize:28)`。
+> **验证前提不变**：无真机联调（无设备 / 无 API Key）；验证 = ArkTS 编译期类型检查 + 纯逻辑单测 + v3.6 静态断言 + 代码审查。
+> 构建配置两态：工作区本机签名（`skip-worktree` 隐藏）/ 仓库 HEAD 脱敏（`signingConfigs: []`）。
+
+### 19.1 改动面（git 工作区）
+
+v3.6 应用范围 = 4 个已跟踪文件（3 chat + base 色资源）：
+
+| 文件 | 变化 |
+| --- | --- |
+| `pages/ChatPage.ets` | 删除 `drawerOpen`/`drawerDragX`，新增 `@State drawerTranslateX = -Layout.drawerMaxWidth` + `@State scrimOpacity`（`drawerVisible` 保留）；`setDrawerOpen` 240ms FastOutSlowIn（打开先 Visible→animateTo 0/1；关闭 onFinish 且位移 ≤-W*0.999 才 None）；PanGesture `onActionUpdate` clamp `Math.max(-width, Math.min(0, e.offsetX))` + `scrimOpacity` 同步；`onActionEnd` 从当前位移 animateTo（`< -width*0.25 || velocityX < -800` 收起，**禁止先归零**）；`sheetContent` bindSheet `showClose:false` + 标题行右侧 `IconBtn(Icons.close, btnSize:28)` |
+| `components/ReasoningEffortPanel.ets` | 487 行（449 非空）：effort 令牌 base 日夜自动切换（base 浅面 / dark 暗舱）；`@ohos.mediaquery` 监听 `(dark-mode: true)` 维护 `isDark`；光晕日间 0.08–0.14 / 夜间 0.12–0.28；日间边框 `Theme.border`、白钮 `bgSurface`+描边；**删除轨道上方 5 个浮点**（tickDots/小圆点） |
+| `components/ModelCapsule.ets` | bindSheet `showClose:false`，标题行右侧 `IconBtn(Icons.close, btnSize:28)`；dragBar 保留 |
+| `resources/base/element/color.json` | 6 个 `effort_*` 改为日间浅面（`#F6F7FB/#FFFFFF/#E6E9F2/#DFE3EC/#6B7280/#111827`）；dark 保持暗舱；键数仍 **54** |
+
+### 19.2 构建矩阵（工作区本机签名态触发 unsigned 回退；仓库态脱敏）
+
+| 目标 | 结果 | 开始时间 | 日志 | 备注 |
+| --- | --- | --- | --- | --- |
+| `core_model` | **BUILD-OK** | 11:51:47 | `build-logs/core_model-20261123-115148.log` | 0 error / 30 warning |
+| `core_protocol` | **BUILD-OK** | 11:51:59 | `build-logs/core_protocol-20261123-115200.log` | 0 error / 32 warning |
+| `core_context` | **BUILD-OK** | 11:52:12 | `build-logs/core_context-20261123-115212.log` | 0 error / 30 warning |
+| `core_plugin` | **BUILD-OK** | 11:52:23 | `build-logs/core_plugin-20261123-115223.log` | 0 error / 33 warning |
+| `chat`（entry HAP，含全部 HAR） | **BUILD-OK [unsigned verification]** | 11:52:36 | `build-logs/all-20261123-115236-unsigned.log` | 0 error / 30 warning；工作区本机签名报 `11014003` → 临时跳过签名重试并恢复 |
+
+| 构建配置两态 | 证据 |
+| --- | --- |
+| 工作区（本机签名） | `build-profile.json5` SHA256 构建前 = 后 = `0259B43A…35C665`（2448B）；`skip-worktree` 隐藏，不提交 |
+| 仓库 HEAD（公开脱敏） | `git show HEAD:build-profile.json5`：`signingConfigs: []`、无 certpath/keyPassword/storePassword/用户路径、product 保留 `"signingConfig": "default"` |
+| 本机材料备份 | `build-profile.local.json5` 存在且被 `.gitignore` 忽略 |
+
+warnings 仍为 `ArkTS:WARN Function may throw exceptions.`（平台 API 建议提示），0 error。
+
+### 19.3 用例统计（最终）
+
+| 指标 | 值 |
+| --- | --- |
+| 运行时间 | **2026-11-23 11:51:39** |
+| 用例文件 | **34 个** |
+| 断言级用例 | **499 条** |
+| 通过 / 失败 / 跳过 | **499 / 0 / 0** |
+| 结果 | `RESULT: PASS`（`run.ps1` 退出码 0） |
+| prepare 产物 | 拷贝 51 个纯逻辑文件；跳过 5；未命中 1；0 告警 |
+
+基线更新（仅测试侧）：`93/94/95/96` 抽屉断言改 v3.6 口径（`drawerTranslateX`/`scrimOpacity`/`Math.max`/从当前位移动画/无 `drawerDragX`/无 `drawerOpen`/`onFinish`/Visibility）；`90–95` 的 effort 色值断言改为**日夜两套精确值**；**新增 `96-design-v36-static.test.mjs`**（6 条，含面板日夜/无浮点/弹窗关闭按钮）。实测 v3.6 `setDrawerOpen` 调用点 **8 处**（v3.5 为 9，v3.6 去掉 1 处；断言按实测 ≥8）。
+
+### 19.4 三项修复证据（`96` 6/6 + 更新后的 `93/94/95` 通过）
+
+| 项 | 证据（文件:行/数量） |
+| --- | --- |
+| ① 抽屉单一位移（不回跳） | `ChatPage.ets`：`@State drawerTranslateX: number = -Layout.drawerMaxWidth`（:194）、`@State scrimOpacity`（:196）、`drawerVisible`(:192)；全文件 **`drawerDragX` 0 次、`drawerOpen` 0 次**（双状态彻底删除）；`drawerTranslateX` 12 次、`scrimOpacity` 7 次；抽屉块（`// 折叠态会话抽屉` 起）遮罩 `.opacity(this.scrimOpacity)`(:1830)、抽屉层 `.translate({ x: this.drawerTranslateX })`(:1852)、`onActionUpdate` `Math.max(-width, Math.min(0, e.offsetX))`(:1857) + `scrimOpacity = 1 + drawerTranslateX / width`(:1858)、`onActionEnd` 从当前位移 `animateTo`（`:1863 velocityX < -800`、`:1864 drawerTranslateX < -width * 0.25`，动画前无归零赋值）、`onFinish`(:1871)；区块无 `TransitionEffect`/装饰 `Blank`；`setDrawerOpen` 8 处调用 |
+| ② 面板日夜双主题 + 无浮点 | `ReasoningEffortPanel.ets` 487 行/449 非空：`import mediaquery from '@ohos.mediaquery'`(:13)、`@State isDark`(:43)、`matchMediaSync('(dark-mode: true)')`(:73)、监听回调更新 isDark(:75–77)；光晕 `auraAlpha()`(:155) 日间 0.08/0.12/0.14、夜间 0.12/0.28(:163/:174/:177/:186/:188)；圆钮光晕 `isDark ? 0.26 : 0.18`(:403)、白钮 `isDark ? effortTextBright : bgSurface`(:410)、描边 `isDark ? bgSurface : border`(:411)；**`tickDots` 0 次、≤4vp 小圆点 0 个**（5 个浮点已删除）；无 Slider/height('100%')/硬编码色/SensorServiceKit；6 个 effort 令牌 + radialGradient + HapticUtil.vibrate 保留 |
+| ③ 弹窗自定义关闭按钮 | `ModelCapsule.ets`：bindSheet `showClose: false`(:208) + `IconBtn`(:95) + `Icons.close` + `btnSize: 28`(:98)、`showClose:true` 0 次；`ChatPage.ets`：`sheetContent` bindSheet `showClose:false`(:1885 等)、关闭按钮 `IconBtn({icon: Icons.close, iconSize:14, btnSize:28, bgColor: Theme.bgSurface3})`(:1588–1592)；ChatPage 内 `showClose:true` 仅 **1 处且属于 SourcePane 组件属性**（:1808） |
+| 颜色 | base/dark 各 **54 键**（v3.6 指纹：base `1BF1BDF2BA075EC5`、dark `C1454749E5322E3C`）；base effort 六值 = 日间浅面、dark effort 六值 = 夜间暗舱（见 §19.1）；violet/pink 保留 |
+
+### 19.5 静态断言总览
+
+| 文件 | 结果 | 覆盖 |
+| --- | --- | --- |
+| `96-design-v36-static` | **6/6 PASS** | 单一位移/回弹、面板日夜+无浮点、弹窗关闭按钮、54 色键日夜两套、纪律 |
+| `95-design-v35-static` | **6/6 PASS** | v3.5 基线上移 v3.6 抽屉/面板口径 |
+| `94-design-v34-static` | **6/6 PASS** | v3.4 基线上移 v3.6 抽屉/面板口径 |
+| `93-design-v33-static` | **6/6 PASS** | v3.3 基线上移 v3.6 抽屉/面板口径 |
+| `92-design-v32-static` | **11/11 PASS** | v3.2 根因 + 头像 + 54 色键日夜两套 + git HEAD 脱敏 |
+| `91-design-v3-static` | **15/15 PASS** | v3/v3.1 设计基线 + 54 色键（effort 日夜两套精确断言） |
+| `90-refactor-static` | **11/11 PASS** | 54 色键日夜两套/20 interfaces/git HEAD 脱敏/入口/L3/虚列表/行数 |
+| 合计 | **61/61 PASS** | — |
+
+### 19.6 契约 / 回归
+
+| 项 | 证据 |
+| --- | --- |
+| chat 改动（已登记） | `ChatPage.ets` 11-23 11:47:03 `AE63EFDDD5E5372D`（1785 非空）；`ReasoningEffortPanel.ets` 11:45:31 `6DE2772D267AB014`（449 非空/487 总行）；`ModelCapsule.ets` 11:46:50 `504D08700A6416FA`（204 非空） |
+| 颜色（已登记） | base `1BF1BDF2BA075EC5`（54 键，effort 改日间浅面）；dark `C1454749E5322E3C`（54 键，暗舱不变） |
+| `packages/*` 未变 | 最新 mtime 仍 v3.5/v3.4：core_model `SettingsKeys.ets` 11-23 11:23:07、core_protocol `ModelCatalog.ets` 11-23 10:57:44、core_context 11-19、core_plugin 11-20 17:41:45 |
+| 未改动 | `ChatRuntimeApi.ets` 仍 `BBEC5EB0320C5919`（11-20 17:38:13）；`Theme.ets` 11:23（v3.5 已登记）；`main_pages` 4 页 |
+| 行数约束 | `ChatRuntime` 非空 338；`SessionController` 409、`StreamTurnExecutor` 401（≤500）；面板 449 非空（UI 组件无 500 限制） |
+| 跨轮回归 | R1→v3.5 全量保持绿（499/499）；v3.5 常驻挂载/Haptic/54 色键断言按 v3.6 口径更新后仍绿 |
+
+### 19.7 未覆盖项与风险
+
+| # | 风险/未覆盖 | 说明 |
+| --- | --- | --- |
+| 1 | **无真机联调仍成立** | 抽屉拖动跟手/松手回弹（不同位移抬手是否回跳）、1/4 与 velocityX<-800 阈值手感、日夜面板切换观感（浅底对比度/白钮描边/氛围光）、自定义关闭按钮点击命中与视觉居中均未设备验证 |
+| 2 | **无 API Key** | 面板/弹窗所在模型链路（真实模型添加/切换）未联网验证 |
+| 3 | 构建配置两态 | 工作区本机签名 CLI 报 `11014003`（走 unsigned 回退）；仓库 HEAD 已脱敏但**未产出可安装签名包** |
+| 4 | 调用点数量变化 | `setDrawerOpen` 调用点 v3.5 为 9、v3.6 为 8（去掉 1 处）；断言按实测 ≥8，报告如实记录 |
+| 5 | 咨询类 warning | 模块重编译 30–33 条 `Function may throw exceptions`，0 error |
+| 6 | 静态门禁基线 | 单一位移/240ms/16 处阈值/日夜两套色值/无浮点为当前基线，后续再调需同步更新断言 |
+
+**建议真机冒烟清单（v3.6 重点）**：
+1. **抽屉回弹**：打开抽屉后分别拖到 ~10%/30%/60% 宽度抬手：都从**当前位置**继续动画（不回跳），≤1/4 弹回全开、>1/4 或快速左滑收起；遮罩透明度与位移同步；快速连拖无跳变。
+2. **日夜面板**：系统切浅色/深色（或设置内切换）打开模型胶囊→思考强度面板：浅色下卡片浅面、白钮带描边、光晕克制清晰；深色下暗舱、光晕更亮；两套下 6 档字/能量柱/6 格柱对比度可读；确认轨道上方无浮点小圆。
+3. **弹窗关闭**：打开模型胶囊弹窗与 ChatPage 底部弹窗：右上关闭按钮位置一致、点击可关、与标题行垂直居中；无系统重复关闭按钮。
+4. **回归**：抽屉三入口、四态胶囊取消、能量槽拖动、震动开关、角色头像、记忆卡、SKILL.md 等 v3/v3.1–v3.5 功能无回归。
+
+### 19.8 结论
+
+- **构建**：最终快照（11:51:47–11:52:36）5/5 BUILD-OK，0 error；工作区本机签名触发 unsigned 回退且恢复无损（工作区 SHA256 前后一致 `0259B43A…`），仓库 HEAD 已脱敏（`signingConfigs: []`）。
+- **用例**：**34 文件 / 499 断言全绿**（0 失败 / 0 跳过）；prepare 51 拷贝/0 告警。
+- **v3.6 三项修复**静态证据齐全：抽屉单一位移（drawerTranslateX/scrimOpacity，无 drawerDragX/drawerOpen，onActionEnd 从当前位移动画）；面板日夜双主题（isDark + mediaquery + 光晕 0.08–0.14/0.12–0.28，无浮点刻度）；弹窗 showClose:false + 统一 IconBtn(Icons.close, btnSize:28)。
+- **契约**：packages 未变；`ChatRuntimeApi`/`ChatRuntime` 未动；main_pages 4 页；颜色 54 键（effort 日夜两套）。
+- **缺陷**：本轮**未发现需要修复的缺陷**。
+- **残余**：真机拖动回弹/日夜观感/浅底白钮对比度/自定义关闭按钮仍需按 §19.7 冒烟；无真机前不得宣布 v3.6 交互修复闭环达成。
